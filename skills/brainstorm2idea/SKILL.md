@@ -22,6 +22,8 @@ b2i <command>
 - `check [brief|-] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes)
 - `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
 - `spark [category] [--seed <id>] [--output <path>] [--json]` — browse 24 curated prototype archetypes or seed a complete `brief.md` (devtools, productivity, local-ai, automation, cli, web)
+- `init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a starter `brief.md` with TODO sections (for humans working outside an agent; refuses to overwrite an existing brief)
+- `dump [file|-] [--output <path>] [--json]` — de-noise a raw voice transcript or rambling dump into a draft brief skeleton
 - `export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]` — export approved brief to Agent Kickoff Prompt, GitHub Task Checklist, One-page PRD, or JSON
 - `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding:
   - `--target i2p` (default): invokes `i2p new <dir>`, then merges brief into `<dir>/PROTOTYPE.md`

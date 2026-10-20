@@ -20,11 +20,13 @@ const MOCK_I2P = resolve('tests/fixtures/mock-i2p.mjs');
 const FIXTURES_DIR = resolve('tests/fixtures');
 const TMP_DIR = resolve('tests/tmp-test-sandbox');
 
-function runB2i(args, env = {}) {
-  const res = spawnSync(process.execPath, [B2I_CLI, ...args], {
+function runB2i(args, env = {}, input = null) {
+  const opts = {
     encoding: 'utf8',
     env: { ...process.env, ...env },
-  });
+  };
+  if (input !== null) opts.input = input;
+  const res = spawnSync(process.execPath, [B2I_CLI, ...args], opts);
   return {
     code: res.status,
     stdout: res.stdout || '',
@@ -613,5 +615,155 @@ distilled: Store with payment processing
     assert.ok(parsed.score >= 0);
     assert.ok(parsed.breakdown);
     assert.equal(parsed.breakdown.rabbitHoles, 40);
+  });
+});
+
+describe('6. CLI Command: init', () => {
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('b2i init generates a schema-valid brief that passes check', () => {
+    const target = join(TMP_DIR, 'init-brief.md');
+    const res = runB2i(['init', 'my-app', '--output', target]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea init — SUCCESS/);
+    assert.ok(existsSync(target), 'init writes the brief to disk');
+
+    const content = readFileSync(target, 'utf8');
+    const valid = validateBrief(content);
+    assert.equal(valid.ok, true, `generated brief must pass 7/7 (${valid.errors.join(', ')})`);
+    assert.equal(valid.meta.template, 'cli');
+    assert.equal(valid.meta.name, 'my-app');
+  });
+
+  test('b2i init --template library emits the Public API section', () => {
+    const target = join(TMP_DIR, 'init-lib.md');
+    const res = runB2i(['init', 'mylib', '--template', 'library', '--output', target]);
+    assert.equal(res.code, 0);
+
+    const content = readFileSync(target, 'utf8');
+    assert.match(content, /## Public API/, 'library briefs use the Public API section');
+    assert.doesNotMatch(content, /## Core flows/, 'library briefs must not use Core flows');
+
+    const valid = validateBrief(content);
+    assert.equal(valid.ok, true);
+    assert.equal(valid.meta.template, 'library');
+  });
+
+  test('b2i init library brief scores without an alignment penalty', () => {
+    const target = join(TMP_DIR, 'init-lib-score.md');
+    const res = runB2i(['init', 'mylib', '--template', 'library', '--output', target]);
+    assert.equal(res.code, 0);
+
+    const score = scoreBrief(readFileSync(target, 'utf8'));
+    assert.equal(score.ok, true);
+    assert.equal(
+      score.tips.some((t) => t.includes('should describe exported functions/API')),
+      false,
+      'library briefs must not trigger the library/API alignment notice'
+    );
+  });
+
+  test('b2i init rejects an invalid template', () => {
+    const res = runB2i(['init', 'my-app', '--template', 'mobile']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /invalid template "mobile"/);
+  });
+
+  test('b2i init requires a name', () => {
+    const res = runB2i(['init']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /usage: b2i init <name>/);
+  });
+
+  test('b2i init refuses to overwrite an existing brief', () => {
+    const target = join(TMP_DIR, 'existing-brief.md');
+    writeFileSync(target, 'existing content', 'utf8');
+
+    const res = runB2i(['init', 'my-app', '--output', target]);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /brief already exists/);
+    assert.equal(readFileSync(target, 'utf8'), 'existing content', 'existing file is untouched');
+  });
+
+  test('b2i init --json outputs a machine-readable payload', () => {
+    const target = join(TMP_DIR, 'init-json.md');
+    const res = runB2i(['init', 'my-app', '--output', target, '--json']);
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.template, 'cli');
+    assert.equal(parsed.path, resolve(target));
+  });
+
+  test('b2i init escapes quotes in the name so the frontmatter round-trips', () => {
+    const target = join(TMP_DIR, 'init-quoted.md');
+    const res = runB2i(['init', 'my "cool" app', '--output', target]);
+    assert.equal(res.code, 0);
+
+    const content = readFileSync(target, 'utf8');
+    const { meta } = parseFrontmatter(content);
+    assert.ok(
+      meta.distilled.includes('cool'),
+      `distilled must retain the full name, got "${meta.distilled}"`
+    );
+    assert.equal(validateBrief(content).ok, true, 'quoted names still produce a valid brief');
+  });
+});
+
+describe('7. CLI Command: dump', () => {
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('b2i dump reads stdin and emits a valid draft brief', () => {
+    const res = runB2i(['dump', '-'], {}, 'Um, so I want to build a recipe box that saves recipes with tags and searches them offline.');
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /schema: b2i-brief@1/);
+    assert.match(res.stdout, /# Draft Prototype/);
+
+    const valid = validateBrief(res.stdout);
+    assert.equal(valid.ok, true, `dump output must pass 7/7 (${valid.errors.join(', ')})`);
+  });
+
+  test('b2i dump strips conversational filler from the distilled line', () => {
+    const res = runB2i(['dump', '-'], {}, 'Like, I was thinking about building a log parser for messy key value log lines.');
+    const { meta } = parseFrontmatter(res.stdout);
+    assert.ok(!/^like\b/i.test(meta.distilled), `filler should be stripped, got "${meta.distilled}"`);
+    assert.match(meta.distilled, /log parser/i);
+  });
+
+  test('b2i dump escapes quotes so the distilled round-trips', () => {
+    const res = runB2i(['dump', '-'], {}, 'Build a tool called "quoted" that parses messy log lines into JSON.');
+    const { meta } = parseFrontmatter(res.stdout);
+    assert.ok(
+      meta.distilled.includes('quoted'),
+      `distilled must retain the quoted phrase, got "${meta.distilled}"`
+    );
+  });
+
+  test('b2i dump --output writes the draft to disk', () => {
+    const target = join(TMP_DIR, 'dumped-brief.md');
+    const res = runB2i(['dump', '-', '--output', target], {}, 'Build a tool that tallies lines of code per file extension.');
+    assert.equal(res.code, 0);
+    assert.ok(existsSync(target), 'dump writes the draft to disk');
+    assert.equal(validateBrief(readFileSync(target, 'utf8')).ok, true);
+  });
+
+  test('b2i dump exits 1 on a missing input file', () => {
+    const res = runB2i(['dump', 'no-such-transcript.md']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /file not found/);
   });
 });

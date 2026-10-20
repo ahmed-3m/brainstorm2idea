@@ -15,6 +15,8 @@ Welcome to `brainstorm2idea` (`b2i`).
 - Run check on a brief: `node bin/b2i.mjs check [path|-]`
 - Run doability scorer: `node bin/b2i.mjs score [path|-]`
 - Run idea spark discovery: `node bin/b2i.mjs spark [category] [--seed <id>] [--output <path>]`
+- Scaffold a starter brief (TODO sections): `node bin/b2i.mjs init <name> [--template web|api|cli|worker|library|none] [--output <path>]`
+- De-noise a raw transcript into a draft brief: `node bin/b2i.mjs dump [file|-] [--output <path>]`
 - Run export to prompt/issues/prd/json: `node bin/b2i.mjs export [path|-] [--format prompt|issues|prd|json] [--output <path>]`
 - Run list: `node bin/b2i.mjs list`
 - Run handoff: `node bin/b2i.mjs handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run]`

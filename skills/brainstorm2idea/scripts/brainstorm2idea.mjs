@@ -2,14 +2,18 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { parseFrontmatter, parseSections, extractListItems } from './parser.mjs';
+import { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue } from './parser.mjs';
 
 // Re-export for backward compatibility (tests and external consumers import from engine)
-export { parseFrontmatter, parseSections, extractListItems };
+export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue };
 
 export const VERSION = '0.4.1';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
+
+// Every CLI command the router accepts. Kept in sync with the router switch
+// and asserted against SKILL.md / AGENTS.md by the consistency test suite.
+export const CLI_COMMANDS = ['check', 'score', 'spark', 'init', 'dump', 'export', 'handoff', 'list'];
 
 // ANSI terminal colors (strictly disabled in non-TTY or when NO_COLOR is set)
 export const useColor = () => {
@@ -1672,19 +1676,20 @@ export function cmdDump(args) {
     content = readFileSync(resolved, 'utf8');
   }
 
-  // De-noise: strip common conversational filler and meta-commentary
-  const fillerPatterns = [
-    /^(um|uh|like|you know|i mean|so|basically|actually|honestly|literally)\b/i,
-    /^(hey|hi|hello|so i was thinking|you know how|well)\b/i,
-    /^(okay|ok|right|sure|yeah|yep|nope)\b/i,
-  ];
+  // De-noise: strip leading conversational filler and meta-commentary.
+  // The filler is removed from the FRONT of a line rather than dropping the
+  // whole line — otherwise a single-line dump starting with "Um," loses
+  // the entire idea.
+  const FILLER_PREFIX = /^(?:(?:um|uh|er|like|you know|i mean|so|basically|actually|honestly|literally|hey|hi|hello|well|okay|ok|right|sure|yeah|yep|nope)\b[\s,:-]*)+/i;
 
   const lines = content.split(/\r?\n/);
-  const kept = lines.filter((line) => {
+  const kept = lines.map((line) => {
     const trimmed = line.trim();
-    if (!trimmed) return true; // keep blank lines for paragraph structure
-    return !fillerPatterns.some((p) => p.test(trimmed));
-  });
+    if (!trimmed) return line; // keep blank lines for paragraph structure
+    const stripped = trimmed.replace(FILLER_PREFIX, '').trim();
+    // Only drop the line if stripping left nothing meaningful behind.
+    return stripped.length > 0 ? stripped : '';
+  }).filter((l) => l.length > 0);
 
   const denoised = kept.join('\n').trim();
 
@@ -1693,7 +1698,7 @@ export function cmdDump(args) {
     .split(/[.!?]\s+/)
     .find((s) => s.trim().length > 10)
     ?.trim() || denoised.slice(0, 100);
-  const distilled = firstSentence.slice(0, 200);
+  const distilled = quoteFrontmatterValue(firstSentence).slice(0, 200);
 
   const draft = `---
 schema: ${SCHEMA_VERSION}
@@ -1769,7 +1774,9 @@ export function cmdInit(args) {
   }
 
   const chosenTemplate = template || 'cli';
-  const distilled = `${chosenTemplate} prototype for ${name}`.slice(0, 200);
+  const flowsHeader = chosenTemplate === 'library' ? '## Public API' : '## Core flows';
+  const safeName = quoteFrontmatterValue(name);
+  const distilled = quoteFrontmatterValue(`${chosenTemplate} prototype for ${safeName}`).slice(0, 200);
   const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
 
   const briefMd = `---
@@ -1777,12 +1784,12 @@ schema: ${SCHEMA_VERSION}
 template: ${chosenTemplate}
 distilled: "${distilled}"
 ---
-# ${name}
+# ${safeName}
 
 ## Goal
 - TODO: Define the primary user problem this prototype solves
 
-## Core flows
+${flowsHeader}
 1. TODO: Smallest demoable flow (1-3 numbered items)
 
 ## Out of scope

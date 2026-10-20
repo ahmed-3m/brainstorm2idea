@@ -248,7 +248,9 @@ brainstorm2idea/
 
 ## 9. Non-goals
 
-Personas, success metrics, competitor scanning, PRD-lite output, suggested `add` modules, an `init` command, multi-brief management, invoking `i2p` from inside `check`.
+Personas, success metrics, competitor scanning, PRD-lite output, suggested `add` modules, multi-brief management, invoking `i2p` from inside `check`.
+
+> **Superseded:** an `init` command was originally listed as a permanent non-goal ("only if non-agent humans ask for it"). It shipped in v0.4.x once that demand materialized — `b2i init <name>` scaffolds a starter `brief.md` for humans working outside an agent.
 
 ## 10. Versions & Roadmap
 
@@ -281,6 +283,12 @@ Personas, success metrics, competitor scanning, PRD-lite output, suggested `add`
 - Pure Node.js zero-dependency ANSI terminal styling (`c.green`, `c.red`, `c.yellow`, `c.cyan`, `c.bold`) respecting `NO_COLOR`, `FORCE_COLOR`, and `isTTY`
 - Automated benchmark test suite (`tests/benchmarks.test.mjs`) executing all 5 canonical scenarios from `benchmarks/specs.md`
 
-### Future (Post-v0.4.0)
-1. `b2i init` only if non-agent humans ask for it.
-2. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.
+### v0.4.x (Post-v0.4.0 Additions)
+- `b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]`: starter brief scaffold for non-agent humans
+- `b2i dump [file|-] [--output <path>] [--json]`: mechanical de-noiser for raw transcripts and brain dumps
+- `skills/brainstorm2idea/scripts/parser.mjs`: reusable parser module extracted from the engine
+- `CLI_COMMANDS` export + consistency guards binding the router surface to `SKILL.md` / `AGENTS.md`
+
+### Future (Post-v0.4.x)
+1. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.
+2. Real `idea2prototype` integration test (currently only the `mock-i2p` fixture is exercised in CI).

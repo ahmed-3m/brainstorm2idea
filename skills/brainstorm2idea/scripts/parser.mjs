@@ -98,3 +98,18 @@ export function extractListItems(text) {
 export function readBriefFile(path) {
   return readFileSync(path, 'utf8');
 }
+
+/**
+ * Make an arbitrary string safe to interpolate into a quoted frontmatter value.
+ *
+ * The frontmatter parser stops at the first interior quote and treats a newline
+ * as a key/value boundary, so both must be neutralised before interpolation —
+ * otherwise a value like `Tool called "x"` silently truncates on read-back.
+ */
+export function quoteFrontmatterValue(value) {
+  return String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/"/g, "'")
+    .trim();
+}
+

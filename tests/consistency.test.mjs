@@ -2,10 +2,12 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   VALID_TEMPLATES,
   SCHEMA_VERSION,
   VERSION,
+  CLI_COMMANDS,
 } from '../skills/brainstorm2idea/scripts/brainstorm2idea.mjs';
 
 describe('Consistency Guards', () => {
@@ -59,12 +61,37 @@ describe('Consistency Guards', () => {
   });
 
   test('all command files exist and are well-formed', () => {
-    const cmds = ['b2i.md', 'b2i-dump.md', 'b2i-spark.md'];
+    const cmds = ['b2i.md', 'b2i-dump.md', 'b2i-spark.md', 'b2i-export.md'];
     for (const cmdFile of cmds) {
       const p = resolve('commands', cmdFile);
       assert.ok(existsSync(p), `command file ${cmdFile} exists`);
       const content = readFileSync(p, 'utf8');
       assert.match(content, /^---\r?\ndescription:/, `${cmdFile} has frontmatter description`);
+    }
+  });
+
+  test('every CLI command is documented in SKILL.md and AGENTS.md', () => {
+    const skill = readFileSync(resolve('skills/brainstorm2idea/SKILL.md'), 'utf8');
+    const agents = readFileSync(resolve('AGENTS.md'), 'utf8');
+
+    for (const cmd of CLI_COMMANDS) {
+      assert.ok(
+        skill.includes(`\`${cmd} `) || skill.includes(`\`${cmd}\``),
+        `SKILL.md documents the "${cmd}" command`
+      );
+      assert.ok(
+        agents.includes(`b2i.mjs ${cmd} `) || agents.includes(`b2i.mjs ${cmd}`),
+        `AGENTS.md documents the "${cmd}" command`
+      );
+    }
+  });
+
+  test('the CLI router accepts exactly the documented commands', () => {
+    // Guards against the router and CLI_COMMANDS drifting apart.
+    const res = spawnSync(process.execPath, [resolve('bin/b2i.mjs'), 'help'], { encoding: 'utf8' });
+    assert.equal(res.status, 0);
+    for (const cmd of CLI_COMMANDS) {
+      assert.match(res.stdout, new RegExp(`b2i ${cmd}\\b`), `help output lists "${cmd}"`);
     }
   });
 });

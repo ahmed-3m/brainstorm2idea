@@ -2,7 +2,7 @@
 
 <img src="./assets/readme/hero.svg" width="100%" alt="brainstorm2idea — fuzzy idea to linted brief to running prototype; terminal proof shows b2i check PASS 7/7 and b2i score 85/100 Grade B">
 
-[![npm version](https://img.shields.io/npm/v/@ahmed-3m/brainstorm2idea?color=F59E0B&label=npm)](https://www.npmjs.com/package/@ahmed-3m/brainstorm2idea)
+[![npm pending publish](https://img.shields.io/badge/npm-v0.4.x%20pending%20publish-F59E0B)](https://www.npmjs.com/package/@ahmed-3m/brainstorm2idea)
 [![CI](https://github.com/ahmed-3m/brainstorm2idea/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-3m/brainstorm2idea/actions/workflows/ci.yml)
 [![zero dependencies](https://img.shields.io/badge/dependencies-zero-34D399)](package.json)
 [![node ≥ 18.17](https://img.shields.io/badge/node-%E2%89%A5%2018.17-9CA3AF)](package.json)

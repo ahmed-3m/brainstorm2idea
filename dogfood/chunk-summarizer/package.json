@@ -1,0 +1,22 @@
+{
+  "name": "chunk-summarizer",
+  "version": "0.1.0",
+  "description": "Token-budgeted text chunker and outline builder for large markdown documents",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "test": "node --test test/index.test.mjs",
+    "demo": "node demo.mjs"
+  },
+  "keywords": [
+    "markdown",
+    "chunking",
+    "rag",
+    "llm",
+    "token-budget",
+    "context-window"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  }
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.4.1] — 2026-10-20
+
+### Added
+- `b2i dump [file|-] [--output <path>] [--json]` — mechanical de-noiser for raw voice transcripts and brain dumps: strips conversational filler, extracts the first substantive sentence as `distilled`, and emits a `template: none` TODO draft brief.
+
+### Changed
+- Rabbit-hole detection patterns in `b2i score` now match the documented README set: broadened auth (any `auth`/`authentication`/`authorization`, plus OAuth/OIDC/SAML/SSO) and payment (generic `payment`) patterns; added multi-tenancy, native/mobile app (iOS/Android), and real-time video/audio (live stream, video call) patterns.
+
 ## [v0.4.0] — 2026-10-20
 
 ### Added
@@ -43,7 +51,8 @@
 - `b2i list [--json]` — print schema version and supported templates.
 - Zero npm dependencies; pure Node.js (`node:fs`, `node:path`, `node:child_process`, `node:test`).
 
-[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.0...HEAD
+[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...HEAD
+[v0.4.1]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.1.0...v0.2.0

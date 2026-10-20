@@ -2,8 +2,12 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { parseFrontmatter, parseSections, extractListItems } from './parser.mjs';
 
-export const VERSION = '0.4.0';
+// Re-export for backward compatibility (tests and external consumers import from engine)
+export { parseFrontmatter, parseSections, extractListItems };
+
+export const VERSION = '0.4.1';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
 
@@ -33,91 +37,6 @@ export const RABBIT_HOLES = [
   { pattern: /\b(native app|mobile app|ios|android)\b/i, label: 'Native app', fix: 'web or CLI prototype first; mobile is v1' },
   { pattern: /\b(real.?time (video|audio)|live stream|video call|video chat)\b/i, label: 'Real-time media', fix: 'mock media with static fixtures or text-only fallback' },
 ];
-
-// ---------------------------------------------------------------------------
-// Helpers & Frontmatter Parser
-// ---------------------------------------------------------------------------
-
-export function parseFrontmatter(content) {
-  const safeContent = String(content || '').replace(/^\uFEFF/, '');
-  const match = safeContent.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!match) return { meta: {}, body: safeContent };
-
-  const rawMeta = match[1];
-  const body = safeContent.slice(match[0].length);
-  const meta = {};
-
-  const lines = rawMeta.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const colonIdx = trimmed.indexOf(':');
-    if (colonIdx === -1) continue;
-
-    const key = trimmed.slice(0, colonIdx).trim();
-    if (!key) continue;
-    let val = trimmed.slice(colonIdx + 1).trim();
-
-    // Strip inline comments only when outside quotes
-    if (val.startsWith('"') || val.startsWith("'")) {
-      const quoteChar = val[0];
-      const endQuoteIdx = val.indexOf(quoteChar, 1);
-      if (endQuoteIdx !== -1) {
-        val = val.slice(1, endQuoteIdx);
-      } else {
-        val = val.slice(1);
-      }
-    } else {
-      const commentIdx = val.indexOf('#');
-      if (commentIdx !== -1) {
-        val = val.slice(0, commentIdx).trim();
-      }
-    }
-
-    meta[key] = val;
-  }
-
-  return { meta, body };
-}
-
-export function parseSections(body) {
-  const safeBody = String(body || '');
-  const lines = safeBody.split(/\r?\n/);
-  let title = '';
-  const sections = {};
-  let currentSection = null;
-  let currentContent = [];
-
-  for (const line of lines) {
-    const h1Match = line.match(/^#\s+(.+)$/);
-    if (h1Match && !title) {
-      title = h1Match[1].trim();
-      continue;
-    }
-
-    const h2Match = line.match(/^##\s+(.+)$/);
-    if (h2Match) {
-      if (currentSection) {
-        sections[currentSection] = currentContent.join('\n').trim();
-      }
-      // Strip trailing colon or spaces, e.g. "## Goal:" -> "Goal"
-      currentSection = h2Match[1].trim().replace(/:\s*$/, '');
-      currentContent = [];
-      continue;
-    }
-
-    if (currentSection) {
-      currentContent.push(line);
-    }
-  }
-
-  if (currentSection) {
-    sections[currentSection] = currentContent.join('\n').trim();
-  }
-
-  return { title, sections };
-}
 
 // ---------------------------------------------------------------------------
 // 7 Hard Checks Validator
@@ -1578,16 +1497,6 @@ export function cmdHandoff(args) {
 // ---------------------------------------------------------------------------
 // Export Engine: Prompt, GitHub Issues, PRD, JSON (b2i export)
 // ---------------------------------------------------------------------------
-
-export function extractListItems(text) {
-  if (!text) return [];
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => /^[-*]\s+|\d+[.)]\s+/.test(l))
-    .map((l) => l.replace(/^[-*]\s+|\d+[.)]\s+/, '').trim())
-    .filter(Boolean);
-}
 
 export function exportBrief(content, options = {}) {
   const format = (options.format || 'prompt').toLowerCase();

@@ -70,6 +70,10 @@ npx @ahmed-3m/brainstorm2idea spark devtools
 # Seed a complete, 100/100-doability brief directly to disk
 npx @ahmed-3m/brainstorm2idea spark --seed env-diff --output ./brief.md
 
+# De-noise a raw voice transcript or brain dump into a draft brief (file or piped via stdin)
+npx @ahmed-3m/brainstorm2idea dump transcript.txt
+cat voice-memo.txt | npx @ahmed-3m/brainstorm2idea dump - --output ./brief.md
+
 # Check a brief (file or piped via stdin)
 npx @ahmed-3m/brainstorm2idea check
 cat brief.md | npx @ahmed-3m/brainstorm2idea check -

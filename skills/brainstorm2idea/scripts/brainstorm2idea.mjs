@@ -24,11 +24,14 @@ export const c = {
 };
 
 export const RABBIT_HOLES = [
-  { pattern: /\b(oauth2?|oidc|saml|sso)\b/i, label: 'OAuth/SSO', fix: 'use auth-local or mocked session context for v0' },
-  { pattern: /\b(stripe|paypal|payment gateway|billing)\b/i, label: 'Payment gateway', fix: 'stub checkout with a local mock webhook' },
+  { pattern: /\b(oauth2?|oidc|saml|sso|auth(?:entication|orization)?)\b/i, label: 'OAuth/SSO', fix: 'use auth-local or mocked session context for v0' },
+  { pattern: /\b(stripe|paypal|payment gateway|billing|payment)\b/i, label: 'Payment gateway', fix: 'stub checkout with a local mock webhook' },
   { pattern: /\b(kubernetes|k8s|microservices?|multi-region|kafka)\b/i, label: 'Distributed infra', fix: 'run single-process with local JSON/SQLite storage' },
   { pattern: /\b(webrtc|blockchain|fine-tun(?:e|ing)|custom neural net)\b/i, label: 'Heavy/niche tech', fix: 'mock pipeline with deterministic fixtures' },
   { pattern: /\b(full-text search|elasticsearch|fuzzy search|semantic search)\b/i, label: 'Complex search', fix: 'use simple case-insensitive substring matching' },
+  { pattern: /\b(multi.?tenant|multitenant|cross.?tenant|per.?tenant)\b/i, label: 'Multi-tenancy', fix: 'single-tenant prototype with hard-coded org context' },
+  { pattern: /\b(native app|mobile app|ios|android)\b/i, label: 'Native app', fix: 'web or CLI prototype first; mobile is v1' },
+  { pattern: /\b(real.?time (video|audio)|live stream|video call|video chat)\b/i, label: 'Real-time media', fix: 'mock media with static fixtures or text-only fallback' },
 ];
 
 // ---------------------------------------------------------------------------

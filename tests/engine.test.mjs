@@ -419,6 +419,178 @@ distilled: Shopping app with real-time Stripe checkout and OAuth SSO
     assert.ok(result.tips.some((t) => t.includes('Detected Payment gateway')));
   });
 
+  test('scoreBrief detects multi-tenancy rabbit hole in core flows', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: Multi-tenant SaaS dashboard
+---
+# SaaS Dashboard
+
+## Goal
+- Serve multiple tenants
+
+## Core flows
+1. Multi-tenant onboarding with subdomain routing
+2. Cross-tenant data isolation
+
+## Out of scope
+- Custom UI theming
+- Email notification service
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Detected Multi-tenancy')));
+    assert.equal(result.breakdown.rabbitHoles, 25, 'one unmitigated rabbit hole: 40 - 15 = 25');
+  });
+
+  test('scoreBrief mitigates multi-tenancy when in out-of-scope', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: Single-tenant dashboard
+---
+# Dashboard
+
+## Goal
+- Show metrics for one org
+
+## Core flows
+1. View metrics dashboard
+
+## Out of scope
+- Multi-tenant subdomain routing
+- Cross-org data sharing
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Mitigated Multi-tenancy')));
+    assert.equal(result.breakdown.rabbitHoles, 40, 'all mitigated: full 40 pts');
+  });
+
+  test('scoreBrief detects native app rabbit hole in core flows', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: Mobile-first task manager
+---
+# Task Manager
+
+## Goal
+- Track tasks on mobile
+
+## Core flows
+1. Build native iOS and Android app
+2. Sync via push notifications
+
+## Out of scope
+- Web fallback
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Detected Native app')));
+    assert.equal(result.breakdown.rabbitHoles, 25, 'one unmitigated rabbit hole: 40 - 15 = 25');
+  });
+
+  test('scoreBrief mitigates native app when in out-of-scope', () => {
+    const content = `---
+schema: b2i-brief@1
+template: cli
+distilled: CLI task manager
+---
+# Task CLI
+
+## Goal
+- Track tasks in terminal
+
+## Core flows
+1. Add task via command line
+2. List pending tasks
+
+## Out of scope
+- Native iOS/Android mobile app
+- Push notification service
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Mitigated Native app')));
+    assert.equal(result.breakdown.rabbitHoles, 40, 'all mitigated: full 40 pts');
+  });
+
+  test('scoreBrief detects real-time media rabbit hole in core flows', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: Video chat prototype
+---
+# Video Chat
+
+## Goal
+- Video call between users
+
+## Core flows
+1. Start real-time video call
+2. Stream audio between peers
+
+## Out of scope
+- Call recording
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Detected Real-time media')));
+    assert.equal(result.breakdown.rabbitHoles, 25, 'one unmitigated rabbit hole: 40 - 15 = 25');
+  });
+
+  test('scoreBrief catches generic auth keyword beyond OAuth/SSO', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: App with authentication
+---
+# Auth App
+
+## Goal
+- User login and registration
+
+## Core flows
+1. User authenticates with password
+2. Session management
+
+## Out of scope
+- Social login providers
+- Hardware security keys
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Detected OAuth/SSO')));
+    assert.equal(result.breakdown.rabbitHoles, 25, 'one unmitigated rabbit hole: 40 - 15 = 25');
+  });
+
+  test('scoreBrief catches generic payment keyword beyond Stripe', () => {
+    const content = `---
+schema: b2i-brief@1
+template: web
+distilled: Store with payment processing
+---
+# Store
+
+## Goal
+- Accept customer payments
+
+## Core flows
+1. Process payment at checkout
+2. Handle refunds
+
+## Out of scope
+- Tax calculation engine
+- Invoice PDF generation
+`;
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.tips.some((t) => t.includes('Detected Payment gateway')));
+    assert.equal(result.breakdown.rabbitHoles, 25, 'one unmitigated rabbit hole: 40 - 15 = 25');
+  });
+
   test('scoreBrief returns 0 and INVALID grade for broken briefs', () => {
     const content = readFileSync(join(FIXTURES_DIR, 'fail-no-h1.md'), 'utf8');
     const result = scoreBrief(content);

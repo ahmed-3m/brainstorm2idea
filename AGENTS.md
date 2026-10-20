@@ -11,7 +11,7 @@ Welcome to `brainstorm2idea` (`b2i`).
 
 ## Commands
 
-- Run tests: `npm test` or `node --test tests/*.test.mjs`
+- Run tests: `npm test` or `node --test tests/engine.test.mjs tests/consistency.test.mjs`
 - Run check on a brief: `node bin/b2i.mjs check [path]`
 - Run list: `node bin/b2i.mjs list`
 - Run handoff: `node bin/b2i.mjs handoff <dir> [--brief <path>] [--i2p <path>] [--dry-run]`

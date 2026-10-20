@@ -2,12 +2,16 @@
 
 ## [Unreleased]
 
+## [v0.4.1] — 2026-10-21
+
 ### Added
+- `b2i dump [file|-] [--output <path>] [--json]` — mechanical de-noiser for raw voice transcripts and brain dumps: strips conversational filler, extracts the first substantive sentence as `distilled`, and emits a `template: none` TODO draft brief.
 - `b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a schema-valid starter brief with TODO sections for humans working outside an agent; refuses to overwrite an existing `brief.md`.
 - `skills/brainstorm2idea/scripts/parser.mjs` — reusable parser module (`parseFrontmatter`, `parseSections`, `extractListItems`, `readBriefFile`, `quoteFrontmatterValue`, `sanitizeInlineText`) extracted from the engine for external consumers; the engine re-exports it for backward compatibility.
 - `CLI_COMMANDS` export — single source of truth for the CLI router surface, asserted against `SKILL.md` and `AGENTS.md` by the consistency test suite.
 
 ### Changed
+- Rabbit-hole detection patterns in `b2i score` now match the documented README set: broadened auth (any `auth`/`authentication`/`authorization`, plus OAuth/OIDC/SAML/SSO) and payment (generic `payment`) patterns; added multi-tenancy, native/mobile app (iOS/Android), and real-time video/audio (live stream, video call) patterns.
 - README redesigned: SVG hero with real terminal proof, workflow diagram, badges, and restructured story.
 - `b2i init --template library` now emits the `## Public API` section (matching `b2i spark` and the library template contract) instead of `## Core flows`, which previously triggered a spurious alignment penalty and notice in `b2i score`.
 - `b2i init` and `b2i dump` are now documented in the `SKILL.md` and `AGENTS.md` command lists.
@@ -18,14 +22,6 @@
 - `b2i init` no longer rewrites quotes in the project name shown in the `# Title` heading — headings are parsed verbatim, so only the frontmatter value is quote-escaped.
 - `b2i init` now rejects a whitespace-only name and self-verifies the generated brief against the 7 check rules before writing it, so it can no longer report success for a brief that fails `b2i check`.
 - `b2i dump` now preserves blank lines between ideas instead of discarding them.
-
-## [v0.4.1] — 2026-10-20
-
-### Added
-- `b2i dump [file|-] [--output <path>] [--json]` — mechanical de-noiser for raw voice transcripts and brain dumps: strips conversational filler, extracts the first substantive sentence as `distilled`, and emits a `template: none` TODO draft brief.
-
-### Changed
-- Rabbit-hole detection patterns in `b2i score` now match the documented README set: broadened auth (any `auth`/`authentication`/`authorization`, plus OAuth/OIDC/SAML/SSO) and payment (generic `payment`) patterns; added multi-tenancy, native/mobile app (iOS/Android), and real-time video/audio (live stream, video call) patterns.
 
 ## [v0.4.0] — 2026-10-20
 

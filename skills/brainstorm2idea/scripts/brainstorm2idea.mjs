@@ -1747,8 +1747,6 @@ export function cmdInit(args) {
     const a = args[i];
     if (a === '--output' && args[i + 1]) {
       outputPath = args[++i];
-    } else if (a === '--name' && args[i + 1]) {
-      name = args[++i];
     } else if (a === '--template' && args[i + 1]) {
       template = args[++i].toLowerCase();
     } else if (!a.startsWith('--') && !name) {
@@ -1759,7 +1757,7 @@ export function cmdInit(args) {
   if (!name) {
     const err = 'usage: b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]';
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
-    else console.error(err);
+    else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
     return 1;
   }
 
@@ -1771,8 +1769,7 @@ export function cmdInit(args) {
   }
 
   const chosenTemplate = template || 'cli';
-  const flowsHeader = chosenTemplate === 'library' ? '## Public API' : '## Core flows';
-  const distilled = `${chosenTemplate} prototype for ${name}`;
+  const distilled = `${chosenTemplate} prototype for ${name}`.slice(0, 200);
   const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
 
   const briefMd = `---

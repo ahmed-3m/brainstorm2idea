@@ -1,6 +1,6 @@
 {
   "name": "@ahmed-3m/brainstorm2idea",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn fuzzy ideas into machine-linted prototype briefs and hand off to idea2prototype.",
   "type": "module",
   "license": "MIT",
@@ -17,7 +17,7 @@
     "b2i": "bin/b2i.mjs"
   },
   "scripts": {
-    "test": "node --test tests/engine.test.mjs tests/consistency.test.mjs",
+    "test": "node --test tests/engine.test.mjs tests/consistency.test.mjs tests/stress.test.mjs",
     "check": "node bin/b2i.mjs check"
   },
   "files": [

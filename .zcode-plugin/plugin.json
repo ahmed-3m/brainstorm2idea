@@ -1,6 +1,6 @@
 {
   "name": "brainstorm2idea",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Brainstorm2Idea — turn fuzzy ideas into machine-linted prototype briefs (b2i-brief@1) and hand off to idea2prototype.",
   "author": {
     "name": "ahmed-3m"

@@ -57,4 +57,14 @@ describe('Consistency Guards', () => {
       assert.equal(found.version, VERSION);
     }
   });
+
+  test('all command files exist and are well-formed', () => {
+    const cmds = ['b2i.md', 'b2i-dump.md', 'b2i-spark.md'];
+    for (const cmdFile of cmds) {
+      const p = resolve('commands', cmdFile);
+      assert.ok(existsSync(p), `command file ${cmdFile} exists`);
+      const content = readFileSync(p, 'utf8');
+      assert.match(content, /^---\r?\ndescription:/, `${cmdFile} has frontmatter description`);
+    }
+  });
 });

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
 
@@ -20,11 +20,12 @@ export const RABBIT_HOLES = [
 // ---------------------------------------------------------------------------
 
 export function parseFrontmatter(content) {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!match) return { meta: {}, body: content };
+  const safeContent = String(content || '').replace(/^\uFEFF/, '');
+  const match = safeContent.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) return { meta: {}, body: safeContent };
 
   const rawMeta = match[1];
-  const body = content.slice(match[0].length);
+  const body = safeContent.slice(match[0].length);
   const meta = {};
 
   const lines = rawMeta.split(/\r?\n/);
@@ -36,6 +37,7 @@ export function parseFrontmatter(content) {
     if (colonIdx === -1) continue;
 
     const key = trimmed.slice(0, colonIdx).trim();
+    if (!key) continue;
     let val = trimmed.slice(colonIdx + 1).trim();
 
     // Strip inline comments only when outside quotes
@@ -61,7 +63,8 @@ export function parseFrontmatter(content) {
 }
 
 export function parseSections(body) {
-  const lines = body.split(/\r?\n/);
+  const safeBody = String(body || '');
+  const lines = safeBody.split(/\r?\n/);
   let title = '';
   const sections = {};
   let currentSection = null;
@@ -79,7 +82,8 @@ export function parseSections(body) {
       if (currentSection) {
         sections[currentSection] = currentContent.join('\n').trim();
       }
-      currentSection = h2Match[1].trim();
+      // Strip trailing colon or spaces, e.g. "## Goal:" -> "Goal"
+      currentSection = h2Match[1].trim().replace(/:\s*$/, '');
       currentContent = [];
       continue;
     }
@@ -140,7 +144,7 @@ export function validateBrief(content) {
     const bullets = (goalSec.content || '')
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => /^[-*]\s+.+/.test(l));
+      .filter((l) => /^[-*+]\s+.+/.test(l));
     if (bullets.length === 0) {
       errors.push('goal: 0 bullets found (expected 1-3)');
     } else if (bullets.length > 3) {
@@ -156,9 +160,9 @@ export function validateBrief(content) {
     const numbered = (flowsSec.content || '')
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => /^\d+\.\s+.+/.test(l));
+      .filter((l) => /^\d+[.)]\s+.+/.test(l));
     if (numbered.length === 0) {
-      errors.push('flows: 0 numbered flows found (expected 1-3 numbered items, e.g. "1. ...")');
+      errors.push('flows: 0 numbered flows found (expected 1-3 numbered items, e.g. "1. ..." or "1) ...")');
     } else if (numbered.length > 3) {
       errors.push(`flows: ${numbered.length} flows, max 3`);
     }
@@ -172,7 +176,7 @@ export function validateBrief(content) {
     const bullets = (outOfScopeSec.content || '')
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => /^[-*]\s+.+/.test(l));
+      .filter((l) => /^[-*+]\s+.+/.test(l));
     if (bullets.length === 0) {
       errors.push('out-of-scope: at least 1 bullet required');
     }
@@ -191,9 +195,9 @@ export function validateBrief(content) {
     const lines = risksSec.content
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => /^[-*]\s+/.test(l));
+      .filter((l) => /^[-*+]\s+/.test(l));
     for (const l of lines) {
-      if (!/^[-*]\s+(RISK:|ASSUMPTION:)/i.test(l)) {
+      if (!/^[-*+]\s+(RISK:|ASSUMPTION:)/i.test(l)) {
         warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK: or ASSUMPTION:`);
         break;
       }
@@ -205,7 +209,7 @@ export function validateBrief(content) {
     const noteBullets = notesSec.content
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => /^[-*]\s+.+/.test(l));
+      .filter((l) => /^[-*+]\s+.+/.test(l));
     if (noteBullets.length > 6) {
       warnings.push(`notes: ${noteBullets.length} bullets, recommended max 6`);
     }
@@ -250,15 +254,19 @@ export function scoreBrief(content) {
   }
 
   const { sections, meta } = valid;
-  const outOfScope = sections['Out of scope'] || '';
-  const goal = sections['Goal'] || '';
-  const flows = sections['Core flows'] || sections['Public API'] || '';
+  const getSec = (pattern) => {
+    const k = Object.keys(sections).find((key) => pattern.test(key));
+    return k ? sections[k] : '';
+  };
+  const outOfScope = getSec(/^Out of scope/i);
+  const goal = getSec(/^Goal/i);
+  const flows = getSec(/^(Core flows|Public API)/i);
 
   // 1. Scope Cut Score (30 pts max)
   const oosBullets = outOfScope
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => /^[-*]\s+.+/.test(l)).length;
+    .filter((l) => /^[-*+]\s+.+/.test(l)).length;
   let scopeScore = 0;
   if (oosBullets >= 2) scopeScore = 30;
   else if (oosBullets === 1) scopeScore = 15;
@@ -284,13 +292,13 @@ export function scoreBrief(content) {
 
   // 3. Template-Flow Alignment & Risk Awareness (30 pts max)
   let alignmentScore = 15; // base for valid template
-  const risksKey = Object.keys(sections).find((k) => /^Risks/i.test(k));
-  if (risksKey && sections[risksKey]) {
-    const hasAssumptions = /[-*]\s+(ASSUMPTION:|RISK:)/i.test(sections[risksKey]);
+  const risksContent = getSec(/^Risks/i);
+  if (risksContent) {
+    const hasAssumptions = /[-*+]\s+(ASSUMPTION:|RISK:)/i.test(risksContent);
     if (hasAssumptions) alignmentScore += 10;
   }
-  const notesKey = Object.keys(sections).find((k) => /^Notes$/i.test(k));
-  if (!notesKey || sections[notesKey].split(/\r?\n/).filter((l) => /^[-*]/.test(l.trim())).length <= 6) {
+  const notesContent = getSec(/^Notes$/i);
+  if (!notesContent || notesContent.split(/\r?\n/).filter((l) => /^[-*+]\s+.+/.test(l.trim())).length <= 6) {
     alignmentScore += 5;
   }
 
@@ -354,18 +362,29 @@ export function scoreBrief(content) {
 export function cmdCheck(args) {
   const isJson = args.includes('--json');
   const briefPath = args.find((a) => !a.startsWith('--')) ?? './brief.md';
-  const resolved = resolve(process.cwd(), briefPath);
+  let content;
 
-  if (!existsSync(resolved)) {
-    if (isJson) {
-      console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
-    } else {
-      console.error(`Brainstorm2idea check — FAIL (0/7)\n  file not found: ${briefPath}`);
+  if (briefPath === '-') {
+    try {
+      content = readFileSync(0, 'utf8');
+    } catch (err) {
+      if (isJson) console.log(JSON.stringify({ ok: false, error: `failed to read stdin: ${err.message}` }, null, 2));
+      else console.error(`Brainstorm2idea check — FAIL (0/7)\n  failed to read stdin: ${err.message}`);
+      return 1;
     }
-    return 1;
+  } else {
+    const resolved = resolve(process.cwd(), briefPath);
+    if (!existsSync(resolved)) {
+      if (isJson) {
+        console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
+      } else {
+        console.error(`Brainstorm2idea check — FAIL (0/7)\n  file not found: ${briefPath}`);
+      }
+      return 1;
+    }
+    content = readFileSync(resolved, 'utf8');
   }
 
-  const content = readFileSync(resolved, 'utf8');
   const result = validateBrief(content);
 
   if (isJson) {
@@ -393,18 +412,29 @@ export function cmdCheck(args) {
 export function cmdScore(args) {
   const isJson = args.includes('--json');
   const briefPath = args.find((a) => !a.startsWith('--')) ?? './brief.md';
-  const resolved = resolve(process.cwd(), briefPath);
+  let content;
 
-  if (!existsSync(resolved)) {
-    if (isJson) {
-      console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
-    } else {
-      console.error(`Brainstorm2idea score — FAIL\n  file not found: ${briefPath}`);
+  if (briefPath === '-') {
+    try {
+      content = readFileSync(0, 'utf8');
+    } catch (err) {
+      if (isJson) console.log(JSON.stringify({ ok: false, error: `failed to read stdin: ${err.message}` }, null, 2));
+      else console.error(`Brainstorm2idea score — FAIL\n  failed to read stdin: ${err.message}`);
+      return 1;
     }
-    return 1;
+  } else {
+    const resolved = resolve(process.cwd(), briefPath);
+    if (!existsSync(resolved)) {
+      if (isJson) {
+        console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
+      } else {
+        console.error(`Brainstorm2idea score — FAIL\n  file not found: ${briefPath}`);
+      }
+      return 1;
+    }
+    content = readFileSync(resolved, 'utf8');
   }
 
-  const content = readFileSync(resolved, 'utf8');
   const result = scoreBrief(content);
 
   if (isJson) {
@@ -440,6 +470,788 @@ export function cmdList(args) {
     console.log(`  schema:    ${SCHEMA_VERSION}`);
     console.log(`  templates: ${VALID_TEMPLATES.join(', ')}`);
   }
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Idea Spark & Discovery System (b2i spark)
+// ---------------------------------------------------------------------------
+
+export const SPARK_CATEGORIES = [
+  'devtools',
+  'productivity',
+  'local-ai',
+  'automation',
+  'cli',
+  'web',
+];
+
+export const SPARK_CATALOG = [
+  // --- DEVTOOLS ---
+  {
+    id: 'env-diff',
+    category: 'devtools',
+    template: 'cli',
+    name: 'env-diff',
+    distilled: 'CLI tool comparing .env against .env.example to report missing, extra, or unpopulated variables',
+    goals: [
+      'Compare local .env against repository .env.example',
+      'Report missing or empty required environment keys with non-zero exit code on failure',
+    ],
+    flows: [
+      'Scan current directory for .env and .env.example',
+      'Diff keys and values without exposing secret contents',
+      'Output formatted color report and summary table',
+    ],
+    outOfScope: [
+      'Remote secret manager integration (AWS Secrets Manager, Vault)',
+      'Automatic value generation or encryption',
+    ],
+    risks: [
+      'ASSUMPTION: standard KEY=value syntax without complex multiline bash expansion',
+    ],
+    notes: [
+      'Zero dependencies; ideal as pre-commit or CI check',
+    ],
+  },
+  {
+    id: 'git-staleness',
+    category: 'devtools',
+    template: 'cli',
+    name: 'git-staleness',
+    distilled: 'Auditor scanning local git repository for stale, merged, or uncommitted branches with terminal summary',
+    goals: [
+      'List all local git branches with days since last commit',
+      'Identify fully merged branches ready for pruning',
+    ],
+    flows: [
+      'Inspect local git refs and commit dates using git CLI',
+      'Categorize branches into Active, Stale (>30 days), and Merged',
+      'Offer one-command prune summary of merged branches',
+    ],
+    outOfScope: [
+      'Remote repo deletion or GitHub PR manipulation',
+      'Automatic uncommitted work stashing',
+    ],
+    risks: [
+      'ASSUMPTION: standard git executable is available on user PATH',
+    ],
+    notes: [
+      'Safe read-only execution by default',
+    ],
+  },
+  {
+    id: 'api-stub-mock',
+    category: 'devtools',
+    template: 'api',
+    name: 'api-stub-mock',
+    distilled: 'Zero-config local HTTP server returning JSON mocks defined in a single markdown table',
+    goals: [
+      'Parse routes and mock JSON responses from a local markdown file',
+      'Serve requests over local HTTP port with configurable delay',
+    ],
+    flows: [
+      'Start local HTTP server listening on localhost:3000',
+      'Match incoming GET/POST paths against markdown route table',
+      'Return configured mock JSON body with 200 OK status',
+    ],
+    outOfScope: [
+      'Authentication, OAuth, or rate limiting',
+      'Database persistence or dynamic templating engines',
+    ],
+    risks: [
+      'ASSUMPTION: Local developer testing only; no production exposure',
+    ],
+    notes: [
+      'Pure Node.js built-in node:http module',
+    ],
+  },
+  {
+    id: 'md-link-checker',
+    category: 'devtools',
+    template: 'cli',
+    name: 'md-link-checker',
+    distilled: 'Fast offline markdown validator verifying relative file links and heading anchors in workspace',
+    goals: [
+      'Parse markdown files for relative file paths and anchor links',
+      'Verify target files and headers exist on disk',
+    ],
+    flows: [
+      'Crawl all .md files in the current repository',
+      'Validate relative links against local filesystem',
+      'Print broken link locations with line numbers and exit 1 on error',
+    ],
+    outOfScope: [
+      'External HTTP/HTTPS link crawling or network requests',
+      'Markdown linting beyond link validity',
+    ],
+    risks: [
+      'ASSUMPTION: Markdown conforms to standard CommonMark link syntax',
+    ],
+    notes: [
+      'Fast sub-second scan across large documentation sets',
+    ],
+  },
+
+  // --- PRODUCTIVITY ---
+  {
+    id: 'focus-shelf',
+    category: 'productivity',
+    template: 'cli',
+    name: 'focus-shelf',
+    distilled: 'Minimalist single-task worklog CLI recording active sessions and writing daily markdown notes',
+    goals: [
+      'Start a timer for a single named task',
+      'Log completed task durations into a daily markdown worklog',
+    ],
+    flows: [
+      'Run focus start <task-name> with optional duration',
+      'Display countdown or elapsed time in terminal title or output',
+      'Run focus stop to log timestamp, task, and notes to worklog.md',
+    ],
+    outOfScope: [
+      'Cloud sync, user logins, or collaboration',
+      'Audio alarms or background daemon services',
+    ],
+    risks: [
+      'ASSUMPTION: Flat-file local storage in current directory or ~/.focus-shelf.json',
+    ],
+    notes: [
+      'Simple, distraction-free tool for solo hackers',
+    ],
+  },
+  {
+    id: 'snippet-stash',
+    category: 'productivity',
+    template: 'cli',
+    name: 'snippet-stash',
+    distilled: 'Keyboard-searchable code snippet manager storing plain-text snippets in local JSON',
+    goals: [
+      'Store and tag short code snippets, commands, and prompts',
+      'Search snippets by tag or keyword and copy to clipboard',
+    ],
+    flows: [
+      'Save new snippet with title, tag, and multiline content',
+      'Search snippets with keyword filtering in terminal',
+      'Output chosen snippet to stdout or copy buffer',
+    ],
+    outOfScope: [
+      'Cloud sync, encrypted secret vaults, or multi-user accounts',
+      'Syntax highlighting or AST analysis',
+    ],
+    risks: [
+      'ASSUMPTION: Plain-text local JSON storage is sufficient for non-sensitive snippets',
+    ],
+    notes: [
+      'Keyboard-first terminal speed',
+    ],
+  },
+  {
+    id: 'meeting-actions',
+    category: 'productivity',
+    template: 'cli',
+    name: 'meeting-actions',
+    distilled: 'Transcript de-noiser that extracts categorized action items, owners, and decisions into markdown',
+    goals: [
+      'Parse unformatted meeting transcript or notes',
+      'Extract numbered action items, assigned owners, and key decisions',
+    ],
+    flows: [
+      'Read transcript from file or stdin',
+      'Identify action phrases (todo, will do, assign, agreed, decided)',
+      'Output structured markdown checklist with Owner and Due tags',
+    ],
+    outOfScope: [
+      'Audio recording or speech-to-text transcription',
+      'Jira, Linear, or Trello API syncing',
+    ],
+    risks: [
+      'ASSUMPTION: Text transcript contains natural conversational cues',
+    ],
+    notes: [
+      'Deterministic regex/heuristic parser with zero external AI tokens needed',
+    ],
+  },
+  {
+    id: 'habit-strip',
+    category: 'productivity',
+    template: 'cli',
+    name: 'habit-strip',
+    distilled: 'Terminal habit tracker rendering horizontal ASCII completion progress streaks for 3 daily goals',
+    goals: [
+      'Track 1-3 daily habits over a rolling 14-day window',
+      'Render visual ASCII streak bar in terminal',
+    ],
+    flows: [
+      'Mark habit complete for today via simple toggle command',
+      'Render 14-day ASCII streak chart with success percentages',
+      'Persist daily completions in a local JSON state file',
+    ],
+    outOfScope: [
+      'Mobile notifications, calendar syncing, or cloud backends',
+      'Unlimited habit tracking (strictly capped at 3 habits for focus)',
+    ],
+    risks: [
+      'ASSUMPTION: Local machine time is accurate for date calculation',
+    ],
+    notes: [
+      'Ultra-compact terminal aesthetic',
+    ],
+  },
+
+  // --- LOCAL-AI ---
+  {
+    id: 'prompt-diff',
+    category: 'local-ai',
+    template: 'cli',
+    name: 'prompt-diff',
+    distilled: 'Prompt evaluation tool running test inputs against 2 prompt variants and printing side-by-side diffs',
+    goals: [
+      'Test two prompt templates against a fixture dataset',
+      'Compare outputs and highlight differences in terminal',
+    ],
+    flows: [
+      'Load prompt A, prompt B, and inputs array from local file',
+      'Execute prompts against local model or mock fixture runner',
+      'Display side-by-side terminal diff showing token counts and variances',
+    ],
+    outOfScope: [
+      'Fine-tuning models or training pipelines',
+      'Paid third-party analytics dashboards',
+    ],
+    risks: [
+      'ASSUMPTION: Model returns deterministic or temperature=0 responses for diffing',
+    ],
+    notes: [
+      'Essential utility for prompt engineering and agent reliability',
+    ],
+  },
+  {
+    id: 'chunk-summarizer',
+    category: 'local-ai',
+    template: 'library',
+    name: 'chunk-summarizer',
+    distilled: 'Token-budgeted text chunker and outline builder for large markdown documents',
+    goals: [
+      'Split large markdown documents into semantic chunks preserving heading boundaries',
+      'Generate hierarchical table-of-contents outline with token counts per section',
+    ],
+    flows: [
+      'parseOutline(markdown: string): DocumentOutline',
+      'chunkByBudget(markdown: string, maxTokens: number): MarkdownChunk[]',
+    ],
+    outOfScope: [
+      'Direct LLM API calls or vector embeddings',
+      'PDF/DOCX binary document parsing',
+    ],
+    risks: [
+      'ASSUMPTION: Rough 4 characters per token estimate suffices for chunking boundaries',
+    ],
+    notes: [
+      'Zero dependencies; standard Node.js library for agent context management',
+    ],
+  },
+  {
+    id: 'commit-drafter',
+    category: 'local-ai',
+    template: 'cli',
+    name: 'commit-drafter',
+    distilled: 'Tool that inspects staged git diffs and drafts a Conventional Commit message proposal',
+    goals: [
+      'Analyze staged git changes and file paths',
+      'Draft concise type(scope): description commit message conforming to Conventional Commits',
+    ],
+    flows: [
+      'Run git diff --cached to extract changed files and diff chunks',
+      'Identify primary modification category (feat, fix, refactor, docs, test)',
+      'Print formatted commit message with option to commit directly',
+    ],
+    outOfScope: [
+      'Pushing to remote remotes or PR creation',
+      'Interactive git rebase or history modification',
+    ],
+    risks: [
+      'ASSUMPTION: Staged git diff is non-empty',
+    ],
+    notes: [
+      'Rules-based heuristics with optional local LLM hook',
+    ],
+  },
+  {
+    id: 'agent-eval-harness',
+    category: 'local-ai',
+    template: 'library',
+    name: 'agent-eval-harness',
+    distilled: 'Lightweight assertion runner testing that AI agent outputs satisfy regex, schema, and length rules',
+    goals: [
+      'Validate agent response payloads against structured assertions',
+      'Produce compact pass/fail scorecards with actionable violation notes',
+    ],
+    flows: [
+      'defineContract(rules: ContractRule[]): ContractEvaluator',
+      'evaluateOutput(output: string, contract: ContractEvaluator): EvalReport',
+    ],
+    outOfScope: [
+      'Complex statistical LLM-as-a-judge model pipelines',
+      'Distributed test cluster execution',
+    ],
+    risks: [
+      'ASSUMPTION: Deterministic regex and structural JSON/markdown rules',
+    ],
+    notes: [
+      'High-speed CI validator for coding agents',
+    ],
+  },
+
+  // --- AUTOMATION ---
+  {
+    id: 'clean-downloads',
+    category: 'automation',
+    template: 'cli',
+    name: 'clean-downloads',
+    distilled: 'Rule-based desktop download directory cleaner organizing files by extension into dated folders',
+    goals: [
+      'Scan target directory for loose files older than N days',
+      'Safely organize files into categorized subfolders (Images, Docs, Archives, Installers)',
+    ],
+    flows: [
+      'Inspect target directory and classify files by file extension',
+      'Print dry-run preview of planned file moves',
+      'Execute moves with safety checks preventing destination overwrites',
+    ],
+    outOfScope: [
+      'Permanent file deletion or unrecoverable shredding',
+      'Cloud storage synchronization',
+    ],
+    risks: [
+      'ASSUMPTION: User has write permissions on target folder',
+    ],
+    notes: [
+      'Always runs in dry-run mode unless --force flag is passed',
+    ],
+  },
+  {
+    id: 'webhook-logger',
+    category: 'automation',
+    template: 'api',
+    name: 'webhook-logger',
+    distilled: 'Local HTTP webhook sink that logs incoming payloads to a file with terminal inspection and replay',
+    goals: [
+      'Accept arbitrary HTTP POST/PUT webhook payloads on configurable port',
+      'Log headers, timestamp, and body to a local JSON Lines file',
+    ],
+    flows: [
+      'Listen on localhost:4000/webhook and respond with 200 OK',
+      'Append formatted request payload to ./webhooks.jsonl',
+      'Provide CLI log command to inspect latest 10 received payloads',
+    ],
+    outOfScope: [
+      'Public internet tunneling (ngrok/cloudflared integration)',
+      'Complex authentication or HMAC verification',
+    ],
+    risks: [
+      'ASSUMPTION: Payloads are JSON or plain text',
+    ],
+    notes: [
+      'Invaluable for debugging third-party webhook integrations locally',
+    ],
+  },
+  {
+    id: 'rss-digest',
+    category: 'automation',
+    template: 'worker',
+    name: 'rss-digest',
+    distilled: 'Feed aggregator fetching 3 configured tech RSS feeds and compiling a single morning markdown digest',
+    goals: [
+      'Fetch and parse RSS/Atom XML feeds from configured URLs',
+      'Filter posts published within the last 24 hours into a markdown digest',
+    ],
+    flows: [
+      'Fetch feed XML using native fetch() with timeout',
+      'Parse item titles, links, and publication dates with regex',
+      'Write aggregated, deduplicated markdown file to ./daily-digest.md',
+    ],
+    outOfScope: [
+      'Full-text web scraping of linked articles',
+      'Email or Slack webhook dispatching',
+    ],
+    risks: [
+      'ASSUMPTION: RSS feeds expose standard XML <item> or <entry> tags',
+    ],
+    notes: [
+      'Zero external dependencies; built-in fetch and regex XML parsing',
+    ],
+  },
+  {
+    id: 'asset-optimizer',
+    category: 'automation',
+    template: 'worker',
+    name: 'asset-optimizer',
+    distilled: 'Directory watcher monitoring assets folder and validating image dimensions and file sizes',
+    goals: [
+      'Watch assets directory for newly added PNG and SVG files',
+      'Report oversized assets exceeding configured byte or dimension limits',
+    ],
+    flows: [
+      'Watch target folder using node:fs watch',
+      'Parse PNG/SVG header chunks to extract image width and height',
+      'Log warning if image exceeds max size or dimensions',
+    ],
+    outOfScope: [
+      'Heavy native C++ image compression libraries (sharp, imagemagick)',
+      'Lossy destructive image transcoding',
+    ],
+    risks: [
+      'ASSUMPTION: Standard PNG IHDR and SVG viewBox header structures',
+    ],
+    notes: [
+      'Lightweight pure Node image metadata inspector',
+    ],
+  },
+
+  // --- CLI ---
+  {
+    id: 'port-scout',
+    category: 'cli',
+    template: 'cli',
+    name: 'port-scout',
+    distilled: 'Interactive terminal port inspector showing process names and PIDs listening on local ports',
+    goals: [
+      'Scan active TCP listening ports on localhost',
+      'Display process name, PID, and port in a clean terminal table',
+    ],
+    flows: [
+      'Execute system netstat or lsof to inspect active listening ports',
+      'Parse output into structured array of port mappings',
+      'Print table and offer kill command by port number',
+    ],
+    outOfScope: [
+      'Remote network scanning or port exploitation',
+      'Background daemon monitoring',
+    ],
+    risks: [
+      'ASSUMPTION: Operating system netstat or lsof command is accessible',
+    ],
+    notes: [
+      'Cross-platform: uses netstat on Windows, lsof on macOS/Linux',
+    ],
+  },
+  {
+    id: 'json-slice',
+    category: 'cli',
+    template: 'cli',
+    name: 'json-slice',
+    distilled: 'Command-line JSON extractor for pulling nested keys and arrays with dot-path notation without jq complexity',
+    goals: [
+      'Query JSON input from file or stdin using simple dot paths (user.profile.email)',
+      'Format and colorize matching values',
+    ],
+    flows: [
+      'Read JSON string from file argument or standard input',
+      'Resolve path expression (e.g. data.items[0].id)',
+      'Output formatted value with exit code 0 or 1 if path not found',
+    ],
+    outOfScope: [
+      'Complex jq query language features or mutations',
+      'Schema generation or validation',
+    ],
+    risks: [
+      'ASSUMPTION: Valid JSON input format',
+    ],
+    notes: [
+      'Zero dependencies; ultra-fast startup time (<30ms)',
+    ],
+  },
+  {
+    id: 'file-tally',
+    category: 'cli',
+    template: 'cli',
+    name: 'file-tally',
+    distilled: 'Fast repository code counter reporting lines of code, language breakdown, and largest files',
+    goals: [
+      'Recursively crawl directory ignoring gitignored paths',
+      'Compute total lines, blank lines, and comment lines per file extension',
+    ],
+    flows: [
+      'Traverse workspace directory excluding node_modules and .git',
+      'Count file lines and categorize by extension (.js, .ts, .py, .md)',
+      'Print formatted ASCII breakdown table with summary totals',
+    ],
+    outOfScope: [
+      'Cyclomatic complexity or AST code analysis',
+      'Git blame or historical author tracking',
+    ],
+    risks: [
+      'ASSUMPTION: Workspace contains text files readable as UTF-8',
+    ],
+    notes: [
+      'Pure Node.js file system crawl',
+    ],
+  },
+  {
+    id: 'scratch-pad',
+    category: 'cli',
+    template: 'cli',
+    name: 'scratch-pad',
+    distilled: 'Instant CLI scratch file creator opening a temporary date-stamped markdown buffer',
+    goals: [
+      'Generate a temporary date-stamped scratch markdown file in ~/.scratch',
+      'Open the file in user default $EDITOR or print its file path',
+    ],
+    flows: [
+      'Create ~/.scratch directory if not present',
+      'Generate file named YYYY-MM-DD-slug.md with initial template header',
+      'Output path or spawn $EDITOR for immediate notes capture',
+    ],
+    outOfScope: [
+      'Cloud syncing, backup, or encryption',
+      'Full-text search indexing',
+    ],
+    risks: [
+      'ASSUMPTION: User home directory is writable',
+    ],
+    notes: [
+      'Dead simple friction-free note taking',
+    ],
+  },
+
+  // --- WEB ---
+  {
+    id: 'health-board',
+    category: 'web',
+    template: 'web',
+    name: 'health-board',
+    distilled: 'Single-page responsive status dashboard polling local HTTP endpoints and displaying live health badges',
+    goals: [
+      'Poll list of configured local or remote URLs at set intervals',
+      'Display responsive grid of service cards with response latency and status badge',
+    ],
+    flows: [
+      'Load monitored endpoint URLs from local JSON config',
+      'Poll endpoints periodically and record HTTP status code and response time',
+      'Render live status cards with green/red status indicators',
+    ],
+    outOfScope: [
+      'SMS or pager alerts (PagerDuty, Twilio)',
+      'Historical uptime percentage graphs over months',
+      'User login and access control',
+    ],
+    risks: [
+      'ASSUMPTION: Monitored endpoints allow CORS or are served from same origin',
+    ],
+    notes: [
+      'Static vanilla JS + HTML frontend; runs with any local static server',
+    ],
+  },
+  {
+    id: 'recipe-shelf',
+    category: 'web',
+    template: 'web',
+    name: 'recipe-shelf',
+    distilled: 'Offline-first recipe box storing ingredients, tags, and instructions in browser storage with instant search',
+    goals: [
+      'Store recipes with title, ingredients, tags, and prep steps in browser storage',
+      'Search and filter recipes offline by tag or ingredient keyword',
+    ],
+    flows: [
+      'Add recipe through clean modal form with tag chips',
+      'Filter recipe cards instantaneously via search input',
+      'Click card to view formatted recipe with ingredient multiplier buttons',
+    ],
+    outOfScope: [
+      'Cloud sync, user authentication, or social sharing',
+      'Online grocery store ordering integrations',
+    ],
+    risks: [
+      'ASSUMPTION: Browser localStorage or IndexedDB is available',
+    ],
+    notes: [
+      'Single HTML/JS file with zero external CSS/JS framework dependencies',
+    ],
+  },
+  {
+    id: 'decision-matrix',
+    category: 'web',
+    template: 'web',
+    name: 'decision-matrix',
+    distilled: 'Interactive weighted decision matrix calculator comparing options across custom criteria',
+    goals: [
+      'Create custom comparison criteria with 1-5 weighting multipliers',
+      'Score candidate options and view ranked winner scores in real time',
+    ],
+    flows: [
+      'Input criteria with weight sliders (e.g. Cost: 5, Speed: 3, Ease: 4)',
+      'Add candidate options and assign scores 1-10 per criterion',
+      'Compute weighted totals and render live ranked scoreboard',
+    ],
+    outOfScope: [
+      'Collaborative real-time voting rooms',
+      'PDF report exports or charts',
+    ],
+    risks: [
+      'ASSUMPTION: Session state kept in memory or localStorage',
+    ],
+    notes: [
+      'Clean interactive prototype for team or solo decision-making',
+    ],
+  },
+  {
+    id: 'markdown-canvas',
+    category: 'web',
+    template: 'web',
+    name: 'markdown-canvas',
+    distilled: 'Split-pane local markdown documentation viewer with instant TOC navigation and code copy buttons',
+    goals: [
+      'Render markdown documents with clean typography and heading anchors',
+      'Generate dynamic sidebar table of contents for rapid document navigation',
+    ],
+    flows: [
+      'Paste or load markdown document into left editor pane',
+      'Render live HTML preview with syntax-styled code blocks in right pane',
+      'Click TOC items to smooth-scroll preview pane to matching heading',
+    ],
+    outOfScope: [
+      'WYSIWYG rich text editing or block transforms',
+      'Remote document cloud sharing',
+    ],
+    risks: [
+      'ASSUMPTION: Built-in minimal markdown-to-HTML parser is sufficient for standard specs',
+    ],
+    notes: [
+      'Lightweight local documentation reader',
+    ],
+  },
+];
+
+export function generateBriefFromSpark(spark) {
+  const flowsHeader = spark.template === 'library' ? '## Public API' : '## Core flows';
+  const goalsText = spark.goals.map((g) => `- ${g}`).join('\n');
+  const flowsText = spark.flows.map((f, i) => `${i + 1}. ${f}`).join('\n');
+  const oosText = spark.outOfScope.map((o) => `- ${o}`).join('\n');
+  const risksText = (spark.risks || []).map((r) => `- ${r}`).join('\n');
+  const notesText = (spark.notes || []).map((n) => `- ${n}`).join('\n');
+
+  let md = `---
+schema: ${SCHEMA_VERSION}
+template: ${spark.template}
+distilled: "${spark.distilled}"
+---
+# ${spark.name}
+
+## Goal
+${goalsText}
+
+${flowsHeader}
+${flowsText}
+
+## Out of scope
+${oosText}
+`;
+
+  if (risksText) {
+    md += `\n## Risks & assumptions\n${risksText}\n`;
+  }
+  if (notesText) {
+    md += `\n## Notes\n${notesText}\n`;
+  }
+
+  return md.trimEnd() + '\n';
+}
+
+export function cmdSpark(args) {
+  const isJson = args.includes('--json');
+  let category = null;
+  let seedId = null;
+  let outputPath = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--seed' && args[i + 1]) {
+      seedId = args[++i];
+    } else if (a === '--output' && args[i + 1]) {
+      outputPath = args[++i];
+    } else if (!a.startsWith('--') && !category) {
+      category = a.toLowerCase();
+    }
+  }
+
+  // 1. Seed Mode: output a complete prototype brief for an archetype
+  if (seedId) {
+    const spark = SPARK_CATALOG.find((s) => s.id.toLowerCase() === seedId.toLowerCase());
+    if (!spark) {
+      const err = `spark archetype "${seedId}" not found. Run "b2i spark" to view available sparks.`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+      else console.error(`Brainstorm2idea spark — FAIL\n  ${err}`);
+      return 1;
+    }
+
+    const briefMd = generateBriefFromSpark(spark);
+
+    if (outputPath) {
+      const resolved = resolve(process.cwd(), outputPath);
+      writeFileSync(resolved, briefMd, 'utf8');
+      if (isJson) {
+        console.log(JSON.stringify({ ok: true, spark, path: resolved, content: briefMd }, null, 2));
+      } else {
+        console.log(`Brainstorm2idea spark — SEED CREATED`);
+        console.log(`  id:       ${spark.id}`);
+        console.log(`  template: ${spark.template}`);
+        console.log(`  file:     ${resolved}`);
+        console.log(`\nNext step:\n  b2i check ${outputPath} && b2i score ${outputPath}`);
+      }
+    } else {
+      if (isJson) {
+        console.log(JSON.stringify({ ok: true, spark, content: briefMd }, null, 2));
+      } else {
+        console.log(briefMd);
+      }
+    }
+    return 0;
+  }
+
+  // Filter by category if requested
+  let filtered = SPARK_CATALOG;
+  if (category && category !== 'all' && category !== 'help') {
+    filtered = SPARK_CATALOG.filter((s) => s.category.toLowerCase() === category);
+    if (filtered.length === 0) {
+      const err = `unknown category "${category}". Available: ${SPARK_CATEGORIES.join(', ')}`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+      else {
+        console.error(`Brainstorm2idea spark — ${err}`);
+        console.log(`Run "b2i spark" to see all available ideation categories.`);
+      }
+      return 1;
+    }
+  }
+
+  if (isJson) {
+    console.log(JSON.stringify({
+      ok: true,
+      categories: SPARK_CATEGORIES,
+      total: SPARK_CATALOG.length,
+      filtered: filtered.length,
+      sparks: filtered,
+    }, null, 2));
+    return 0;
+  }
+
+  console.log(`Brainstorm2idea spark — ${filtered.length} curated prototype archetypes`);
+  if (!category || category === 'all') {
+    console.log(`Categories: ${SPARK_CATEGORIES.join(', ')}\n`);
+  } else {
+    console.log(`Category: ${category}\n`);
+  }
+
+  for (const s of filtered) {
+    console.log(`  • ${s.id.padEnd(20)} [${s.template.padEnd(7)}] ${s.distilled}`);
+  }
+
+  console.log(`\nUsage tips:`);
+  console.log(`  b2i spark <category>                filter by category (e.g. b2i spark devtools)`);
+  console.log(`  b2i spark --seed <id>               print complete b2i-brief@1 markdown`);
+  console.log(`  b2i spark --seed <id> --output .    write to ./brief.md`);
+  console.log(`  b2i spark --json                    machine-readable catalog for agents & UI`);
+
   return 0;
 }
 
@@ -510,6 +1322,23 @@ export function cmdHandoff(args) {
     const err = 'usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]';
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
     else console.error(err);
+    return 1;
+  }
+
+  // Security & filesystem guards on target directory
+  const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+  const baseDirName = basename(dir);
+  if (WINDOWS_RESERVED.test(baseDirName)) {
+    const err = `invalid directory name "${dir}": reserved system device name (${baseDirName.toUpperCase()})`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
+    return 1;
+  }
+
+  if (/[<>:"|?*]/.test(baseDirName) && baseDirName !== '.') {
+    const err = `invalid directory name "${dir}": contains illegal filesystem characters`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
     return 1;
   }
 
@@ -733,6 +1562,8 @@ export function main(argv = process.argv.slice(2)) {
       return cmdCheck(rest);
     case 'score':
       return cmdScore(rest);
+    case 'spark':
+      return cmdSpark(rest);
     case 'list':
       return cmdList(rest);
     case 'handoff':
@@ -750,6 +1581,7 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`\nUsage:`);
       console.log(`  b2i check [brief] [--json]`);
       console.log(`  b2i score [brief] [--json]`);
+      console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);
       console.log(`  b2i version`);

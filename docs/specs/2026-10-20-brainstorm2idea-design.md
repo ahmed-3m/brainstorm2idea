@@ -261,6 +261,16 @@ Personas, success metrics, competitor scanning, PRD-lite output, suggested `add`
 - Pre-registered ideation benchmarks (`benchmarks/specs.md`)
 - Interactive modal questions via `ask_question`
 
-### Future (Post-v0.2.0)
+### v0.3.0 (Idea Spark Discovery & Hardened Resilience)
+- `b2i spark [category] [--seed <id>] [--output <path>] [--json]`: 24 curated prototype archetypes spanning devtools, productivity, local-ai, automation, cli, and web
+- `/b2i-spark`: Conversational ideation command for blank-canvas developers
+- Stdin piping support: `b2i check -` and `b2i score -`
+- Windows Notepad UTF-8 BOM (`\uFEFF`) and CRLF resilience
+- Heading trailing colon normalization (`## Goal:` $\rightarrow$ `Goal`)
+- Bullet style flexibility (`+`, `*`, `-`) and flow numbering variants (`1)`, `1.`)
+- Directory name security: Windows reserved device name (`CON`, `PRN`, `AUX`, `NUL`) and illegal filesystem character protections
+- Comprehensive stress test suite (`tests/stress.test.mjs`)
+
+### Future (Post-v0.3.0)
 1. `b2i init` only if non-agent humans ask for it.
 2. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.

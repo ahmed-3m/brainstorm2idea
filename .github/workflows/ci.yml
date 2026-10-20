@@ -26,4 +26,4 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Engine tests + consistency checks
-        run: node --test tests/engine.test.mjs tests/consistency.test.mjs
+        run: node --test tests/engine.test.mjs tests/consistency.test.mjs tests/stress.test.mjs

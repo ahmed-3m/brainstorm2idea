@@ -19,8 +19,9 @@ b2i <command>
 
 `<skill-base>` is this skill's directory. Commands:
 
-- `check [brief] [--json]` — run 7 hard lint checks on `brief.md` (compact verdict, max 3 failure notes)
-- `score [brief] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
+- `check [brief|-] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes)
+- `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
+- `spark [category] [--seed <id>] [--output <path>] [--json]` — browse 24 curated prototype archetypes or seed a complete `brief.md` (devtools, productivity, local-ai, automation, cli, web)
 - `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding:
   - `--target i2p` (default): invokes `i2p new <dir>`, then merges brief into `<dir>/PROTOTYPE.md`
   - `--target raw`: scaffolds standalone `<dir>/PROTOTYPE.md` with zero dependencies (for Python, Go, Rust, or non-i2p stacks)
@@ -67,6 +68,13 @@ When the user triggers `/b2i-dump` or pastes an unformatted voice memo, audio tr
 3. **Quarantine Scope Creep:** Immediately move multi-tenancy, payments, auth, mobile apps, or complex infrastructure to `## Out of scope`.
 4. **Draft Immediately (Zero-Question Mode):** Do not grill the user with questions if the transcript contains enough signal. Produce a complete `b2i-brief@1` draft immediately, using `ASSUMPTION:` tags for inferred choices.
 5. **Score Check:** Verify that `b2i score` would rate it ≥ B (≥ 70/100) before presenting.
+
+### Idea Discovery & Spark Protocol (`/b2i-spark`)
+When the user has no idea, asks what to build, or seeks inspiration ("I don't know what to build", "Give me an idea for a CLI tool"):
+1. **Calibrate Preference:** If underspecified, use `ask_question` to determine their interest area (`devtools`, `productivity`, `local-ai`, `automation`, `cli`, `web`) and desired form factor.
+2. **Match Curated Archetypes:** Query `b2i spark <category>` (or search the 24 built-in archetypes) and present 2–3 sharp prototype seeds.
+3. **Seed & Review:** When the user picks a concept, output or seed the brief via `b2i spark --seed <id> --output ./brief.md`, verify with `b2i check` and `b2i score`, and present for approval.
+4. **Handoff:** Chain directly into `b2i handoff <dir>`.
 
 ### Fixed Tail & Skill Chaining
 1. Present the draft brief in chat for human approval.

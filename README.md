@@ -50,14 +50,28 @@ Have an unformatted voice transcript or messy brainstorm dump? Use the fast de-n
 /b2i-dump "<paste your voice transcript or rambling thoughts here>"
 ```
 
+Don't have an idea yet or looking for high-leverage prototype inspiration? Discover ideas:
+```bash
+/b2i-spark "I want to build something in developer tools"
+```
+
 ### 2. Standalone CLI
 
 ```bash
-# Check a brief (7 hard validation checks)
+# Discover ideas across 24 curated prototype archetypes (devtools, productivity, local-ai, automation, cli, web)
+npx @ahmed-3m/brainstorm2idea spark
+npx @ahmed-3m/brainstorm2idea spark devtools
+
+# Seed a complete, 100/100-doability brief directly to disk
+npx @ahmed-3m/brainstorm2idea spark --seed env-diff --output ./brief.md
+
+# Check a brief (file or piped via stdin)
 npx @ahmed-3m/brainstorm2idea check
+cat brief.md | npx @ahmed-3m/brainstorm2idea check -
 
 # Score doability & detect rabbit holes (0–100, letter grade A–F)
 npx @ahmed-3m/brainstorm2idea score
+cat brief.md | npx @ahmed-3m/brainstorm2idea score -
 
 # Handoff to idea2prototype (creates directory and merges brief into PROTOTYPE.md)
 npx @ahmed-3m/brainstorm2idea handoff my-app
@@ -119,8 +133,24 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 Output:
 ```text
-Brainstorm2idea score — 100/100 (Grade A)
+Brainstorm2idea score — 100/100 (Grade A - EXCELLENT)
 ```
+
+## Idea Discovery & Spark Catalog (`b2i spark`)
+
+For developers facing "blank-canvas paralysis" or looking for achievable weekend projects, `b2i spark` ships with **24 curated, high-voltage prototype archetypes** across 6 domains:
+
+- **`devtools`**: `env-diff`, `git-staleness`, `api-stub-mock`, `md-link-checker`
+- **`productivity`**: `focus-shelf`, `snippet-stash`, `meeting-actions`, `habit-strip`
+- **`local-ai`**: `prompt-diff`, `chunk-summarizer`, `commit-drafter`, `agent-eval-harness`
+- **`automation`**: `clean-downloads`, `webhook-logger`, `rss-digest`, `asset-optimizer`
+- **`cli`**: `port-scout`, `json-slice`, `file-tally`, `scratch-pad`
+- **`web`**: `health-board`, `recipe-shelf`, `decision-matrix`, `markdown-canvas`
+
+Every archetype is guaranteed to:
+1. Pass `b2i check` (7/7 validation rules).
+2. Score **100/100 (Grade A - EXCELLENT)** with all risky rabbit holes proactively quarantined in `## Out of scope`.
+3. Seed instantaneously into a local `brief.md` via `b2i spark --seed <id> --output ./brief.md`.
 
 ## Ideation Benchmarks
 

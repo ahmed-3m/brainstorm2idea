@@ -1,0 +1,45 @@
+{
+  "name": "@ahmed-3m/brainstorm2idea",
+  "version": "0.1.0",
+  "description": "Turn fuzzy ideas into machine-linted prototype briefs and hand off to idea2prototype.",
+  "type": "module",
+  "license": "MIT",
+  "author": "ahmed-3m",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahmed-3m/brainstorm2idea.git"
+  },
+  "homepage": "https://github.com/ahmed-3m/brainstorm2idea#readme",
+  "bugs": {
+    "url": "https://github.com/ahmed-3m/brainstorm2idea/issues"
+  },
+  "bin": {
+    "b2i": "bin/b2i.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node bin/b2i.mjs check"
+  },
+  "files": [
+    "bin/",
+    "agents/",
+    "commands/",
+    "skills/brainstorm2idea/SKILL.md",
+    "skills/brainstorm2idea/scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai-agents",
+    "coding-agent",
+    "brainstorming",
+    "ideation",
+    "prototyping",
+    "antigravity",
+    "claude-code",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  }
+}

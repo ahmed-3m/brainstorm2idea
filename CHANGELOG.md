@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a schema-valid starter brief with TODO sections for humans working outside an agent; refuses to overwrite an existing `brief.md`.
+- `skills/brainstorm2idea/scripts/parser.mjs` — reusable parser module (`parseFrontmatter`, `parseSections`, `extractListItems`, `readBriefFile`) extracted from the engine for external consumers; the engine re-exports it for backward compatibility.
+
+### Changed
+- README redesigned: SVG hero with real terminal proof, workflow diagram, badges, and restructured story.
+
 ## [v0.4.1] — 2026-10-20
 
 ### Added

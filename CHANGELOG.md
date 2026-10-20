@@ -4,7 +4,7 @@
 
 ### Added
 - `b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a schema-valid starter brief with TODO sections for humans working outside an agent; refuses to overwrite an existing `brief.md`.
-- `skills/brainstorm2idea/scripts/parser.mjs` — reusable parser module (`parseFrontmatter`, `parseSections`, `extractListItems`, `readBriefFile`, `quoteFrontmatterValue`) extracted from the engine for external consumers; the engine re-exports it for backward compatibility.
+- `skills/brainstorm2idea/scripts/parser.mjs` — reusable parser module (`parseFrontmatter`, `parseSections`, `extractListItems`, `readBriefFile`, `quoteFrontmatterValue`, `sanitizeInlineText`) extracted from the engine for external consumers; the engine re-exports it for backward compatibility.
 - `CLI_COMMANDS` export — single source of truth for the CLI router surface, asserted against `SKILL.md` and `AGENTS.md` by the consistency test suite.
 
 ### Changed
@@ -15,6 +15,9 @@
 ### Fixed
 - `b2i init` and `b2i dump` no longer truncate the `distilled` value when the input contains a double quote — the frontmatter parser stops at the first interior quote, so values are now escaped before interpolation.
 - `b2i dump` no longer discards an entire line that merely *starts* with conversational filler; the filler prefix is stripped and the remainder of the line is preserved.
+- `b2i init` no longer rewrites quotes in the project name shown in the `# Title` heading — headings are parsed verbatim, so only the frontmatter value is quote-escaped.
+- `b2i init` now rejects a whitespace-only name and self-verifies the generated brief against the 7 check rules before writing it, so it can no longer report success for a brief that fails `b2i check`.
+- `b2i dump` now preserves blank lines between ideas instead of discarding them.
 
 ## [v0.4.1] — 2026-10-20
 

@@ -100,6 +100,20 @@ export function readBriefFile(path) {
 }
 
 /**
+ * Collapse a value onto a single line.
+ *
+ * A newline ends the current heading/list item, so any user-supplied text that
+ * lands in a heading or a bullet must not contain one. Unlike
+ * `quoteFrontmatterValue` this leaves quotes intact — headings are parsed
+ * verbatim, so there is no need to mutate them.
+ */
+export function sanitizeInlineText(value) {
+  return String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+}
+
+/**
  * Make an arbitrary string safe to interpolate into a quoted frontmatter value.
  *
  * The frontmatter parser stops at the first interior quote and treats a newline
@@ -107,9 +121,6 @@ export function readBriefFile(path) {
  * otherwise a value like `Tool called "x"` silently truncates on read-back.
  */
 export function quoteFrontmatterValue(value) {
-  return String(value ?? '')
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/"/g, "'")
-    .trim();
+  return sanitizeInlineText(value).replace(/"/g, "'");
 }
 

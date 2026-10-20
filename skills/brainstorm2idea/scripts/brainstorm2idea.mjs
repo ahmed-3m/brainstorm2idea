@@ -2,10 +2,10 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue } from './parser.mjs';
+import { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue, sanitizeInlineText } from './parser.mjs';
 
 // Re-export for backward compatibility (tests and external consumers import from engine)
-export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue };
+export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue, sanitizeInlineText };
 
 export const VERSION = '0.4.1';
 export const SCHEMA_VERSION = 'b2i-brief@1';
@@ -1683,13 +1683,17 @@ export function cmdDump(args) {
   const FILLER_PREFIX = /^(?:(?:um|uh|er|like|you know|i mean|so|basically|actually|honestly|literally|hey|hi|hello|well|okay|ok|right|sure|yeah|yep|nope)\b[\s,:-]*)+/i;
 
   const lines = content.split(/\r?\n/);
-  const kept = lines.map((line) => {
+  const kept = [];
+  for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed) return line; // keep blank lines for paragraph structure
+    if (!trimmed) {
+      kept.push(''); // preserve blank lines for paragraph structure
+      continue;
+    }
     const stripped = trimmed.replace(FILLER_PREFIX, '').trim();
     // Only drop the line if stripping left nothing meaningful behind.
-    return stripped.length > 0 ? stripped : '';
-  }).filter((l) => l.length > 0);
+    if (stripped.length > 0) kept.push(stripped);
+  }
 
   const denoised = kept.join('\n').trim();
 
@@ -1775,8 +1779,16 @@ export function cmdInit(args) {
 
   const chosenTemplate = template || 'cli';
   const flowsHeader = chosenTemplate === 'library' ? '## Public API' : '## Core flows';
-  const safeName = quoteFrontmatterValue(name);
-  const distilled = quoteFrontmatterValue(`${chosenTemplate} prototype for ${safeName}`).slice(0, 200);
+  // The H1 is parsed verbatim, so it keeps the user's quotes; only the
+  // frontmatter value needs quote-escaping.
+  const heading = sanitizeInlineText(name);
+  if (!heading) {
+    const err = 'name must contain at least one non-whitespace character';
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
+    return 1;
+  }
+  const distilled = quoteFrontmatterValue(`${chosenTemplate} prototype for ${heading}`).slice(0, 200);
   const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
 
   const briefMd = `---
@@ -1784,7 +1796,7 @@ schema: ${SCHEMA_VERSION}
 template: ${chosenTemplate}
 distilled: "${distilled}"
 ---
-# ${safeName}
+# ${heading}
 
 ## Goal
 - TODO: Define the primary user problem this prototype solves
@@ -1801,6 +1813,15 @@ ${flowsHeader}
 ## Notes
 - Created by \`b2i init\`; fill in all TODO sections before running \`b2i check\`.
 `;
+
+  // Self-verify: never write a brief that would fail the tool's own check.
+  const selfCheck = validateBrief(briefMd);
+  if (!selfCheck.ok) {
+    const err = `generated brief is invalid: ${selfCheck.errors.join('; ')}`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
+    return 1;
+  }
 
   const resolvedOut = resolve(process.cwd(), briefPath);
   if (existsSync(resolvedOut)) {

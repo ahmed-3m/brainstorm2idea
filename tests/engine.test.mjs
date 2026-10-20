@@ -715,6 +715,33 @@ describe('6. CLI Command: init', () => {
     );
     assert.equal(validateBrief(content).ok, true, 'quoted names still produce a valid brief');
   });
+
+  test('b2i init preserves the H1 name verbatim (quotes included)', () => {
+    const target = join(TMP_DIR, 'init-h1.md');
+    const res = runB2i(['init', 'My "Great" App', '--output', target]);
+    assert.equal(res.code, 0);
+
+    const content = readFileSync(target, 'utf8');
+    assert.equal(validateBrief(content).meta.name, 'My "Great" App', 'H1 keeps the user-supplied name');
+  });
+
+  test('b2i init rejects a whitespace-only name instead of writing an invalid brief', () => {
+    const target = join(TMP_DIR, 'init-blank.md');
+    const res = runB2i(['init', '   ', '--output', target]);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /non-whitespace character/);
+    assert.equal(existsSync(target), false, 'no brief is written for a rejected name');
+  });
+
+  test('b2i init output always passes the 7 check rules', () => {
+    for (const template of VALID_TEMPLATES) {
+      const target = join(TMP_DIR, `init-selfcheck-${template}.md`);
+      const res = runB2i(['init', 'my-app', '--template', template, '--output', target]);
+      assert.equal(res.code, 0, `init --template ${template} must succeed`);
+      const valid = validateBrief(readFileSync(target, 'utf8'));
+      assert.equal(valid.ok, true, `init --template ${template} output must pass 7/7 (${valid.errors.join(', ')})`);
+    }
+  });
 });
 
 describe('7. CLI Command: dump', () => {
@@ -765,5 +792,13 @@ describe('7. CLI Command: dump', () => {
     const res = runB2i(['dump', 'no-such-transcript.md']);
     assert.equal(res.code, 1);
     assert.match(res.all, /file not found/);
+  });
+
+  test('b2i dump preserves paragraph structure between ideas', () => {
+    const input = 'Um, first idea is a recipe box for saving recipes.\n\nLike, the second idea is a log parser for messy key value lines.';
+    const res = runB2i(['dump', '-'], {}, input);
+    assert.equal(res.code, 0);
+    const { meta } = parseFrontmatter(res.stdout);
+    assert.match(meta.distilled, /recipe box/i, 'distilled comes from the first substantive sentence');
   });
 });

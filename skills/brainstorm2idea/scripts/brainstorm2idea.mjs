@@ -3,9 +3,25 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
+
+// ANSI terminal colors (strictly disabled in non-TTY or when NO_COLOR is set)
+export const useColor = () => {
+  if (process.env.NO_COLOR) return false;
+  if (process.env.FORCE_COLOR) return true;
+  return Boolean(process.stdout && process.stdout.isTTY);
+};
+
+export const c = {
+  green: (s) => (useColor() ? `\x1b[32m${s}\x1b[0m` : String(s)),
+  red: (s) => (useColor() ? `\x1b[31m${s}\x1b[0m` : String(s)),
+  yellow: (s) => (useColor() ? `\x1b[33m${s}\x1b[0m` : String(s)),
+  cyan: (s) => (useColor() ? `\x1b[36m${s}\x1b[0m` : String(s)),
+  dim: (s) => (useColor() ? `\x1b[2m${s}\x1b[0m` : String(s)),
+  bold: (s) => (useColor() ? `\x1b[1m${s}\x1b[0m` : String(s)),
+};
 
 export const RABBIT_HOLES = [
   { pattern: /\b(oauth2?|oidc|saml|sso)\b/i, label: 'OAuth/SSO', fix: 'use auth-local or mocked session context for v0' },
@@ -307,9 +323,14 @@ export function scoreBrief(content) {
   if (meta.template === 'cli' && /\b(browser|html|css|dom|react|component)\b/i.test(flows)) {
     templateMismatch = 'template "cli" describes browser/DOM elements in flows';
     alignmentScore = Math.max(0, alignmentScore - 10);
-  } else if (meta.template === 'library' && !/\b(function|export|api|method|class|module)\b/i.test(flows)) {
-    templateMismatch = 'template "library" should describe exported functions/API in flows';
-    alignmentScore = Math.max(0, alignmentScore - 5);
+  } else if (meta.template === 'library') {
+    const hasApiSection = Boolean(sections['Public API']);
+    const hasApiKeywords = /\b(function|export|api|method|class|module)\b/i.test(flows);
+    const hasFunctionSignatures = /\w+\s*\([^)]*\)/.test(flows);
+    if (!hasApiSection && !hasApiKeywords && !hasFunctionSignatures) {
+      templateMismatch = 'template "library" should describe exported functions/API in flows';
+      alignmentScore = Math.max(0, alignmentScore - 5);
+    }
   }
 
   const totalScore = Math.min(100, Math.max(0, scopeScore + rabbitHoleScore + alignmentScore));
@@ -391,17 +412,17 @@ export function cmdCheck(args) {
     console.log(JSON.stringify(result, null, 2));
   } else {
     if (result.ok) {
-      console.log(`Brainstorm2idea check — PASS (7/7)`);
+      console.log(`Brainstorm2idea check — ${c.green('PASS')} (7/7)`);
       for (const w of result.warnings) {
-        console.log(`  note: ${w}`);
+        console.log(`  ${c.yellow('note:')} ${w}`);
       }
     } else {
-      console.log(`Brainstorm2idea check — FAIL (${result.passed}/7)`);
+      console.log(`Brainstorm2idea check — ${c.red('FAIL')} (${result.passed}/7)`);
       for (const err of result.errors.slice(0, 3)) {
-        console.log(`  ${err}`);
+        console.log(`  ${c.red(err)}`);
       }
       for (const w of result.warnings) {
-        console.log(`  note: ${w}`);
+        console.log(`  ${c.yellow('note:')} ${w}`);
       }
     }
   }
@@ -419,7 +440,7 @@ export function cmdScore(args) {
       content = readFileSync(0, 'utf8');
     } catch (err) {
       if (isJson) console.log(JSON.stringify({ ok: false, error: `failed to read stdin: ${err.message}` }, null, 2));
-      else console.error(`Brainstorm2idea score — FAIL\n  failed to read stdin: ${err.message}`);
+      else console.error(`Brainstorm2idea score — ${c.red('FAIL')}\n  failed to read stdin: ${err.message}`);
       return 1;
     }
   } else {
@@ -428,7 +449,7 @@ export function cmdScore(args) {
       if (isJson) {
         console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
       } else {
-        console.error(`Brainstorm2idea score — FAIL\n  file not found: ${briefPath}`);
+        console.error(`Brainstorm2idea score — ${c.red('FAIL')}\n  file not found: ${briefPath}`);
       }
       return 1;
     }
@@ -441,11 +462,12 @@ export function cmdScore(args) {
     console.log(JSON.stringify(result, null, 2));
   } else {
     if (!result.ok) {
-      console.error(`Brainstorm2idea score — INVALID (0/100)`);
-      for (const err of result.notes.slice(0, 3)) console.error(`  ${err}`);
+      console.error(`Brainstorm2idea score — ${c.red('INVALID')} (0/100)`);
+      for (const err of result.notes.slice(0, 3)) console.error(`  ${c.red(err)}`);
       return 1;
     }
-    console.log(`Brainstorm2idea score — ${result.score}/100 (Grade ${result.letterGrade} - ${result.grade})`);
+    const colorFn = result.score >= 80 ? c.green : (result.score >= 70 ? c.yellow : c.red);
+    console.log(`Brainstorm2idea score — ${colorFn(`${result.score}/100`)} (${colorFn(`Grade ${result.letterGrade}`)} - ${colorFn(result.grade)})`);
     console.log(`  breakdown: scope=${result.breakdown.scope}/30, infra=${result.breakdown.rabbitHoles}/40, alignment=${result.breakdown.alignment}/30`);
     for (const tip of result.tips) {
       console.log(`  ${tip}`);
@@ -466,9 +488,9 @@ export function cmdList(args) {
   if (isJson) {
     console.log(JSON.stringify(info, null, 2));
   } else {
-    console.log(`brainstorm2idea v${VERSION}`);
-    console.log(`  schema:    ${SCHEMA_VERSION}`);
-    console.log(`  templates: ${VALID_TEMPLATES.join(', ')}`);
+    console.log(`${c.bold('brainstorm2idea')} ${c.dim(`v${VERSION}`)}`);
+    console.log(`  schema:    ${c.cyan(SCHEMA_VERSION)}`);
+    console.log(`  templates: ${c.cyan(VALID_TEMPLATES.join(', '))}`);
   }
   return 0;
 }
@@ -1193,9 +1215,9 @@ export function cmdSpark(args) {
       if (isJson) {
         console.log(JSON.stringify({ ok: true, spark, path: resolved, content: briefMd }, null, 2));
       } else {
-        console.log(`Brainstorm2idea spark — SEED CREATED`);
-        console.log(`  id:       ${spark.id}`);
-        console.log(`  template: ${spark.template}`);
+        console.log(`Brainstorm2idea spark — ${c.green('SEED CREATED')}`);
+        console.log(`  id:       ${c.cyan(spark.id)}`);
+        console.log(`  template: ${c.cyan(spark.template)}`);
         console.log(`  file:     ${resolved}`);
         console.log(`\nNext step:\n  b2i check ${outputPath} && b2i score ${outputPath}`);
       }
@@ -1235,15 +1257,15 @@ export function cmdSpark(args) {
     return 0;
   }
 
-  console.log(`Brainstorm2idea spark — ${filtered.length} curated prototype archetypes`);
+  console.log(`Brainstorm2idea spark — ${c.green(String(filtered.length))} curated prototype archetypes`);
   if (!category || category === 'all') {
-    console.log(`Categories: ${SPARK_CATEGORIES.join(', ')}\n`);
+    console.log(`Categories: ${c.cyan(SPARK_CATEGORIES.join(', '))}\n`);
   } else {
-    console.log(`Category: ${category}\n`);
+    console.log(`Category: ${c.cyan(category)}\n`);
   }
 
   for (const s of filtered) {
-    console.log(`  • ${s.id.padEnd(20)} [${s.template.padEnd(7)}] ${s.distilled}`);
+    console.log(`  • ${c.bold(s.id.padEnd(20))} [${c.cyan(s.template.padEnd(7))}] ${s.distilled}`);
   }
 
   console.log(`\nUsage tips:`);
@@ -1551,6 +1573,231 @@ export function cmdHandoff(args) {
 }
 
 // ---------------------------------------------------------------------------
+// Export Engine: Prompt, GitHub Issues, PRD, JSON (b2i export)
+// ---------------------------------------------------------------------------
+
+export function extractListItems(text) {
+  if (!text) return [];
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^[-*]\s+|\d+[.)]\s+/.test(l))
+    .map((l) => l.replace(/^[-*]\s+|\d+[.)]\s+/, '').trim())
+    .filter(Boolean);
+}
+
+export function exportBrief(content, options = {}) {
+  const format = (options.format || 'prompt').toLowerCase();
+  const validFormats = ['prompt', 'issues', 'prd', 'json'];
+  if (!validFormats.includes(format)) {
+    throw new Error(`unknown export format "${format}". Supported formats: ${validFormats.join(', ')}`);
+  }
+
+  const { meta, body } = parseFrontmatter(content);
+  const { title, sections } = parseSections(body);
+
+  const valid = validateBrief(content);
+  if (!valid.ok) {
+    throw new Error(`cannot export invalid brief: ${valid.errors.join('; ')}`);
+  }
+
+  const name = title || 'Untitled Prototype';
+  const template = meta.template || 'web';
+  const distilled = meta.distilled || '';
+
+  const getSectionContent = (pattern) => {
+    const key = Object.keys(sections).find((k) => pattern.test(k));
+    return key ? sections[key] : '';
+  };
+
+  const goals = extractListItems(getSectionContent(/^Goal/i));
+  const flows = extractListItems(getSectionContent(/^(Core flows|Public API)/i));
+  const outOfScope = extractListItems(getSectionContent(/^Out of scope/i));
+  const risks = extractListItems(getSectionContent(/^Risks/i));
+  const notes = extractListItems(getSectionContent(/^Notes/i));
+
+  const scoreRes = scoreBrief(content);
+
+  if (format === 'json') {
+    return JSON.stringify({
+      ok: true,
+      schema: meta.schema || SCHEMA_VERSION,
+      name,
+      template,
+      distilled,
+      goals,
+      flows,
+      outOfScope,
+      risks,
+      notes,
+      score: {
+        total: scoreRes.score,
+        grade: scoreRes.grade,
+        letterGrade: scoreRes.letterGrade,
+        breakdown: scoreRes.breakdown,
+      },
+    }, null, 2);
+  }
+
+  if (format === 'prompt') {
+    let out = `# Agent Kickoff Prompt: ${name}\n\n`;
+    out += `You are an expert full-stack developer and prototyping specialist. Your task is to build a minimal, working prototype for **${name}**.\n\n`;
+    out += `## Prototype Brief\n`;
+    out += `- **Idea**: ${distilled}\n`;
+    out += `- **Template Archetype**: \`${template}\`\n\n`;
+    out += `## Primary Goals\n`;
+    out += goals.map((g) => `- ${g}`).join('\n') + '\n\n';
+    out += `## Core User Flows / Implementation Scope\n`;
+    out += flows.map((f, i) => `${i + 1}. ${f}`).join('\n') + '\n\n';
+    out += `## Strict Non-Goals (Out of Scope — DO NOT IMPLEMENT)\n`;
+    out += outOfScope.map((o) => `- ❌ ${o}`).join('\n') + '\n';
+    if (risks.length > 0) {
+      out += `\n## Key Assumptions & Risks\n`;
+      out += risks.map((r) => `- ⚠️ ${r}`).join('\n') + '\n';
+    }
+    if (notes.length > 0) {
+      out += `\n## Development Notes\n`;
+      out += notes.map((n) => `- ℹ️ ${n}`).join('\n') + '\n';
+    }
+    out += `\n## Implementation Instructions for AI Agent\n`;
+    out += `1. **Template & Setup**: Use the standard minimal \`${template}\` architecture with zero external runtime dependencies where possible.\n`;
+    out += `2. **Iterative Build**: Implement Flow 1 first end-to-end and test it before moving to Flow 2.\n`;
+    out += `3. **Hard Scope Discipline**: Under no circumstances build features listed in Non-Goals. Stub any external integrations with mock data.\n`;
+    out += `4. **Verification**: Verify that all core flows function with tests or a local runnable demo.\n`;
+    return out;
+  }
+
+  if (format === 'issues') {
+    let out = `# [Prototype] ${name}: ${distilled}\n\n`;
+    out += `> **Template**: \`${template}\` | **Spec**: \`${SCHEMA_VERSION}\`\n\n`;
+    out += `## Overview\n${distilled}\n\n`;
+    out += `## Task Checklist\n\n`;
+    out += `### Phase 1: Foundations & Scaffolding\n`;
+    out += `- [ ] Initialize repository structure for \`${template}\` template\n`;
+    out += `- [ ] Configure local build/run scripts and test runner\n`;
+    out += `- [ ] Add basic smoke test ensuring harness runs cleanly\n\n`;
+    out += `### Phase 2: Core User Flows\n`;
+    out += flows.map((f) => `- [ ] ${f}`).join('\n') + '\n\n';
+    out += `### Phase 3: Scope Guard & Hardening\n`;
+    out += outOfScope.map((o) => `- [ ] Confirm excluded: ${o}`).join('\n') + '\n';
+    out += `- [ ] End-to-end verification of all core flows\n`;
+    out += `- [ ] Document quickstart in README\n\n`;
+    out += `## Acceptance Criteria\n`;
+    out += goals.map((g) => `- [ ] **Goal Met**: ${g}`).join('\n') + '\n';
+    out += flows.map((f) => `- [ ] **Flow Verified**: ${f}`).join('\n');
+    return out.trimEnd() + '\n';
+  }
+
+  if (format === 'prd') {
+    let out = `# Product Requirements Document (PRD)\n## Project: ${name}\n\n`;
+    out += `| Field | Detail |\n`;
+    out += `|---|---|\n`;
+    out += `| **Status** | Approved Prototype Spec |\n`;
+    out += `| **Template** | \`${template}\` |\n`;
+    out += `| **Schema** | \`${SCHEMA_VERSION}\` |\n`;
+    out += `| **Doability Score** | ${scoreRes.score}/100 (Grade ${scoreRes.letterGrade}) |\n`;
+    out += `| **Summary** | ${distilled} |\n\n`;
+    out += `---\n\n`;
+    out += `### 1. Executive Summary & Problem\n${distilled}\n\n`;
+    out += `### 2. Goals & Success Metrics\n`;
+    out += goals.map((g) => `- **Goal**: ${g}`).join('\n') + '\n\n';
+    out += `### 3. Non-Goals (Strictly Out of Scope)\n`;
+    out += `The following are deliberately excluded from this prototype milestone to maintain velocity:\n`;
+    out += outOfScope.map((o) => `- ⛔ **Non-Goal**: ${o}`).join('\n') + '\n\n';
+    out += `### 4. Functional Requirements & Flows\n`;
+    out += flows.map((f, i) => `${i + 1}. **Flow ${i + 1}**: ${f}`).join('\n') + '\n\n';
+    out += `### 5. Technical Architecture (${template.toUpperCase()})\n`;
+    out += `- **Template Archetype**: \`${template}\`\n`;
+    out += `- **Data & State**: Keep in-memory or single local file (JSON/SQLite). No external database clusters or cloud infrastructure for prototype.\n`;
+    out += `- **Dependencies**: Keep runtime dependencies minimal or zero.\n\n`;
+    if (risks.length > 0) {
+      out += `### 6. Assumptions & Risks\n`;
+      out += risks.map((r) => `- ⚠️ ${r}`).join('\n') + '\n\n';
+    }
+    if (notes.length > 0) {
+      out += `### 7. Implementation Notes\n`;
+      out += notes.map((n) => `- ℹ️ ${n}`).join('\n') + '\n\n';
+    }
+    out += `---\n*Generated by [brainstorm2idea](https://github.com/Ahmed-3M/brainstorm2idea) v${VERSION}*\n`;
+    return out;
+  }
+
+  throw new Error(`unhandled format "${format}"`);
+}
+
+export function cmdExport(args) {
+  const isJson = args.includes('--json');
+  let format = isJson ? 'json' : 'prompt';
+  let outputPath = null;
+  let briefPath = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--format' && args[i + 1]) {
+      format = args[++i].toLowerCase();
+    } else if (a === '--output' && args[i + 1]) {
+      outputPath = args[++i];
+    } else if (a === '--json') {
+      format = 'json';
+    } else if (!a.startsWith('--') && !briefPath) {
+      briefPath = a;
+    }
+  }
+
+  briefPath = briefPath || './brief.md';
+  let content;
+
+  if (briefPath === '-') {
+    try {
+      content = readFileSync(0, 'utf8');
+    } catch (err) {
+      const msg = `failed to read stdin: ${err.message}`;
+      if (isJson || format === 'json') console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(`Brainstorm2idea export — ${c.red('FAIL')}\n  ${msg}`);
+      return 1;
+    }
+  } else {
+    const resolved = resolve(process.cwd(), briefPath);
+    if (!existsSync(resolved)) {
+      const msg = `file not found: ${briefPath}`;
+      if (isJson || format === 'json') console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(`Brainstorm2idea export — ${c.red('FAIL')}\n  ${msg}`);
+      return 1;
+    }
+    content = readFileSync(resolved, 'utf8');
+  }
+
+  try {
+    const rendered = exportBrief(content, { format });
+    if (outputPath) {
+      const resolvedOut = resolve(process.cwd(), outputPath);
+      writeFileSync(resolvedOut, rendered, 'utf8');
+      if (isJson) {
+        console.log(JSON.stringify({ ok: true, format, output: resolvedOut }, null, 2));
+      } else {
+        console.log(`Brainstorm2idea export — ${c.green('SUCCESS')}`);
+        console.log(`  format: ${c.cyan(format)}`);
+        console.log(`  output: ${resolvedOut}`);
+      }
+    } else {
+      if (format === 'json') {
+        console.log(rendered);
+      } else {
+        process.stdout.write(rendered.endsWith('\n') ? rendered : rendered + '\n');
+      }
+    }
+    return 0;
+  } catch (err) {
+    if (isJson || format === 'json') {
+      console.log(JSON.stringify({ ok: false, error: err.message }, null, 2));
+    } else {
+      console.error(`Brainstorm2idea export — ${c.red('FAIL')}\n  ${err.message}`);
+    }
+    return 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main CLI Router
 // ---------------------------------------------------------------------------
 
@@ -1564,6 +1811,8 @@ export function main(argv = process.argv.slice(2)) {
       return cmdScore(rest);
     case 'spark':
       return cmdSpark(rest);
+    case 'export':
+      return cmdExport(rest);
     case 'list':
       return cmdList(rest);
     case 'handoff':
@@ -1582,6 +1831,7 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`  b2i check [brief] [--json]`);
       console.log(`  b2i score [brief] [--json]`);
       console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
+      console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);
       console.log(`  b2i version`);

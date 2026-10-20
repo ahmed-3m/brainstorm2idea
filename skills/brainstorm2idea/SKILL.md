@@ -22,6 +22,7 @@ b2i <command>
 - `check [brief|-] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes)
 - `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
 - `spark [category] [--seed <id>] [--output <path>] [--json]` — browse 24 curated prototype archetypes or seed a complete `brief.md` (devtools, productivity, local-ai, automation, cli, web)
+- `export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]` — export approved brief to Agent Kickoff Prompt, GitHub Task Checklist, One-page PRD, or JSON
 - `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding:
   - `--target i2p` (default): invokes `i2p new <dir>`, then merges brief into `<dir>/PROTOTYPE.md`
   - `--target raw`: scaffolds standalone `<dir>/PROTOTYPE.md` with zero dependencies (for Python, Go, Rust, or non-i2p stacks)
@@ -75,6 +76,13 @@ When the user has no idea, asks what to build, or seeks inspiration ("I don't kn
 2. **Match Curated Archetypes:** Query `b2i spark <category>` (or search the 24 built-in archetypes) and present 2–3 sharp prototype seeds.
 3. **Seed & Review:** When the user picks a concept, output or seed the brief via `b2i spark --seed <id> --output ./brief.md`, verify with `b2i check` and `b2i score`, and present for approval.
 4. **Handoff:** Chain directly into `b2i handoff <dir>`.
+
+### Export Protocol (`/b2i-export`)
+When the user wants to hand off the brief to an external AI agent, project board, or product documentation:
+1. **Agent Kickoff Prompt (`--format prompt`):** Generates a ready-to-paste instruction prompt for Claude Code, Cursor, Copilot, ChatGPT, or Antigravity with strict scope guards.
+2. **GitHub Task Checklist (`--format issues`):** Generates Phase 1 (Scaffolding), Phase 2 (Core Flows), and Phase 3 (Scope Guard & Acceptance Criteria) Markdown checkboxes.
+3. **One-Page PRD (`--format prd`):** Generates a formatted PRD with problem statement, non-goals, and template architecture constraints.
+4. **Machine-Readable JSON (`--format json`):** Emits structured JSON with parsed sections and 0–100 doability scoring.
 
 ### Fixed Tail & Skill Chaining
 1. Present the draft brief in chat for human approval.

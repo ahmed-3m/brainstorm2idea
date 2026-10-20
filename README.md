@@ -55,6 +55,11 @@ Don't have an idea yet or looking for high-leverage prototype inspiration? Disco
 /b2i-spark "I want to build something in developer tools"
 ```
 
+Export an approved brief into an AI agent prompt, GitHub checklist, or PRD:
+```bash
+/b2i-export --format prompt
+```
+
 ### 2. Standalone CLI
 
 ```bash
@@ -72,6 +77,18 @@ cat brief.md | npx @ahmed-3m/brainstorm2idea check -
 # Score doability & detect rabbit holes (0–100, letter grade A–F)
 npx @ahmed-3m/brainstorm2idea score
 cat brief.md | npx @ahmed-3m/brainstorm2idea score -
+
+# Export brief to AI agent kickoff prompt (Claude, Cursor, Copilot, ChatGPT, Antigravity)
+npx @ahmed-3m/brainstorm2idea export brief.md --format prompt
+
+# Export brief to GitHub task checklist (Phase 1, 2, 3 checkboxes)
+npx @ahmed-3m/brainstorm2idea export brief.md --format issues
+
+# Export brief to one-page Product Requirements Document (PRD)
+npx @ahmed-3m/brainstorm2idea export brief.md --format prd --output PRD.md
+
+# Export brief as parsed JSON
+npx @ahmed-3m/brainstorm2idea export brief.md --json
 
 # Handoff to idea2prototype (creates directory and merges brief into PROTOTYPE.md)
 npx @ahmed-3m/brainstorm2idea handoff my-app

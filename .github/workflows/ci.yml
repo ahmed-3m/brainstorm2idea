@@ -25,5 +25,5 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
-      - name: Engine tests + consistency checks
-        run: node --test tests/engine.test.mjs tests/consistency.test.mjs tests/stress.test.mjs
+      - name: Engine tests + consistency checks + benchmarks
+        run: npm test

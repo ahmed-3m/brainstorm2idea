@@ -11,9 +11,10 @@ Welcome to `brainstorm2idea` (`b2i`).
 
 ## Commands
 
-- Run tests: `npm test` or `node --test tests/engine.test.mjs tests/consistency.test.mjs tests/stress.test.mjs`
+- Run tests: `npm test` (executes all 4 suites: `engine`, `consistency`, `stress`, `benchmarks`)
 - Run check on a brief: `node bin/b2i.mjs check [path|-]`
 - Run doability scorer: `node bin/b2i.mjs score [path|-]`
 - Run idea spark discovery: `node bin/b2i.mjs spark [category] [--seed <id>] [--output <path>]`
+- Run export to prompt/issues/prd/json: `node bin/b2i.mjs export [path|-] [--format prompt|issues|prd|json] [--output <path>]`
 - Run list: `node bin/b2i.mjs list`
 - Run handoff: `node bin/b2i.mjs handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run]`

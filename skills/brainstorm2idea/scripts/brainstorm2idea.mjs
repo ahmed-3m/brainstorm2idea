@@ -1737,6 +1737,93 @@ distilled: "${distilled}"
   return 0;
 }
 
+export function cmdInit(args) {
+  const isJson = args.includes('--json');
+  let outputPath = null;
+  let name = null;
+  let template = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--output' && args[i + 1]) {
+      outputPath = args[++i];
+    } else if (a === '--name' && args[i + 1]) {
+      name = args[++i];
+    } else if (a === '--template' && args[i + 1]) {
+      template = args[++i].toLowerCase();
+    } else if (!a.startsWith('--') && !name) {
+      name = a;
+    }
+  }
+
+  if (!name) {
+    const err = 'usage: b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]';
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(err);
+    return 1;
+  }
+
+  if (template && !VALID_TEMPLATES.includes(template)) {
+    const err = `invalid template "${template}" (must be one of: ${VALID_TEMPLATES.join(', ')})`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
+    return 1;
+  }
+
+  const chosenTemplate = template || 'cli';
+  const flowsHeader = chosenTemplate === 'library' ? '## Public API' : '## Core flows';
+  const distilled = `${chosenTemplate} prototype for ${name}`;
+  const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
+
+  const briefMd = `---
+schema: ${SCHEMA_VERSION}
+template: ${chosenTemplate}
+distilled: "${distilled}"
+---
+# ${name}
+
+## Goal
+- TODO: Define the primary user problem this prototype solves
+
+## Core flows
+1. TODO: Smallest demoable flow (1-3 numbered items)
+
+## Out of scope
+- TODO: Non-goals to exclude from the prototype milestone
+
+## Risks & assumptions
+- ASSUMPTION: Inferred from project context; needs human confirmation
+
+## Notes
+- Created by \`b2i init\`; fill in all TODO sections before running \`b2i check\`.
+`;
+
+  const resolvedOut = resolve(process.cwd(), briefPath);
+  if (existsSync(resolvedOut)) {
+    const err = `brief already exists at ${resolvedOut}`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}\n  Remove it first or use a different --output path.`);
+    return 1;
+  }
+
+  writeFileSync(resolvedOut, briefMd.trimEnd() + '\n', 'utf8');
+
+  if (isJson) {
+    console.log(JSON.stringify({ ok: true, path: resolvedOut, template: chosenTemplate }, null, 2));
+  } else {
+    console.log(`Brainstorm2idea init — ${c.green('SUCCESS')}`);
+    console.log(`  brief:   ${resolvedOut}`);
+    console.log(`  template: ${c.cyan(chosenTemplate)}`);
+    console.log(`\nNext steps:`);
+    console.log(`  1. Edit ${resolvedOut} to fill in the TODO sections`);
+    console.log(`  2. b2i check ${resolvedOut}`);
+    console.log(`  3. b2i score ${resolvedOut}`);
+    console.log(`  4. b2i handoff <dir>`);
+  }
+
+  return 0;
+}
+
 export function cmdExport(args) {
   const isJson = args.includes('--json');
   let format = isJson ? 'json' : 'prompt';
@@ -1827,6 +1914,8 @@ export function main(argv = process.argv.slice(2)) {
       return cmdExport(rest);
     case 'dump':
       return cmdDump(rest);
+    case 'init':
+      return cmdInit(rest);
     case 'list':
       return cmdList(rest);
     case 'handoff':
@@ -1847,6 +1936,7 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
       console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);
       console.log(`  b2i dump [file|-] [--output <path>] [--json]`);
+      console.log(`  b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);
       console.log(`  b2i version`);

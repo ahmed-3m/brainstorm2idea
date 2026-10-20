@@ -20,7 +20,10 @@ b2i <command>
 `<skill-base>` is this skill's directory. Commands:
 
 - `check [brief] [--json]` — run 7 hard lint checks on `brief.md` (compact verdict, max 3 failure notes)
-- `handoff <dir> [--brief <path>] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + `i2p new <dir>` + merge brief into `<dir>/PROTOTYPE.md` (brief moved)
+- `score [brief] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
+- `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding:
+  - `--target i2p` (default): invokes `i2p new <dir>`, then merges brief into `<dir>/PROTOTYPE.md`
+  - `--target raw`: scaffolds standalone `<dir>/PROTOTYPE.md` with zero dependencies (for Python, Go, Rust, or non-i2p stacks)
 - `list [--json]` — print schema version (`b2i-brief@1`) and supported templates
 
 ---
@@ -54,14 +57,26 @@ Flows that cannot be demoed belong in `## Out of scope`. If the idea is not soft
 1. Accept raw input without judgment.
 2. Infer every field already implied.
 3. Ask adaptively, **one question at a time**, multiple-choice when possible (expect 3–5, hard cap 8; stop early when remaining unknowns can be recorded as low-risk `ASSUMPTION:` lines).
+   - **Interactive Modal Guidance:** When running in an agent environment equipped with `ask_question`, use it to render interactive multiple-choice options (prefixing the best prototype path with `(Recommended)`). This minimizes typing overhead for the user.
 4. If the dump is secretly two projects, split them and brief one first.
+
+### Dump De-noiser Protocol (`/b2i-dump`)
+When the user triggers `/b2i-dump` or pastes an unformatted voice memo, audio transcript, or rambling brainstorming stream:
+1. **De-noise aggressively:** Strip conversational fluff, meta-comments, and tangential tangents.
+2. **Extract the Core Hook:** Identify the single user problem and the minimal viable solution.
+3. **Quarantine Scope Creep:** Immediately move multi-tenancy, payments, auth, mobile apps, or complex infrastructure to `## Out of scope`.
+4. **Draft Immediately (Zero-Question Mode):** Do not grill the user with questions if the transcript contains enough signal. Produce a complete `b2i-brief@1` draft immediately, using `ASSUMPTION:` tags for inferred choices.
+5. **Score Check:** Verify that `b2i score` would rate it ≥ B (≥ 70/100) before presenting.
 
 ### Fixed Tail & Skill Chaining
 1. Present the draft brief in chat for human approval.
-2. Once approved, write `./brief.md` and immediately execute `b2i check`.
+2. Once approved, write `./brief.md` and immediately execute `b2i check` and `b2i score`.
 3. If check fails, fix the named field, re-run, and output the verdict only.
-4. Ask if the user wants to hand off: `b2i handoff <dir>`.
-5. Once handoff succeeds, immediately read `<dir>/AGENTS.md` (or `<dir>/CLAUDE.md`) so the user can continue straight into the `idea2prototype` build loop without repeating context.
+4. If score flags unmitigated rabbit holes (e.g. auth, billing, multi-tenancy in core flows), surface a 1-line advisory note suggesting to move them to `## Out of scope`.
+5. Ask if the user wants to hand off:
+   - `b2i handoff <dir>` (scaffolds via `idea2prototype`, full Node/TS/web/cli/worker stack)
+   - `b2i handoff <dir> --target raw` (scaffolds standalone `PROTOTYPE.md` with zero dependencies for Python, Go, Rust, or custom workflows)
+6. Once handoff succeeds, immediately read `<dir>/AGENTS.md` (or `<dir>/CLAUDE.md` / `<dir>/PROTOTYPE.md`) so the user can continue straight into the build loop without repeating context.
 
 ---
 

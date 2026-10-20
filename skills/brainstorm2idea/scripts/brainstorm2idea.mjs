@@ -1,11 +1,19 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
+
+export const RABBIT_HOLES = [
+  { pattern: /\b(oauth2?|oidc|saml|sso)\b/i, label: 'OAuth/SSO', fix: 'use auth-local or mocked session context for v0' },
+  { pattern: /\b(stripe|paypal|payment gateway|billing)\b/i, label: 'Payment gateway', fix: 'stub checkout with a local mock webhook' },
+  { pattern: /\b(kubernetes|k8s|microservices?|multi-region|kafka)\b/i, label: 'Distributed infra', fix: 'run single-process with local JSON/SQLite storage' },
+  { pattern: /\b(webrtc|blockchain|fine-tun(?:e|ing)|custom neural net)\b/i, label: 'Heavy/niche tech', fix: 'mock pipeline with deterministic fixtures' },
+  { pattern: /\b(full-text search|elasticsearch|fuzzy search|semantic search)\b/i, label: 'Complex search', fix: 'use simple case-insensitive substring matching' },
+];
 
 // ---------------------------------------------------------------------------
 // Helpers & Frontmatter Parser
@@ -187,7 +195,7 @@ export function validateBrief(content) {
     for (const l of lines) {
       if (!/^[-*]\s+(RISK:|ASSUMPTION:)/i.test(l)) {
         warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK: or ASSUMPTION:`);
-        break; // one warning is enough
+        break;
       }
     }
   }
@@ -223,7 +231,124 @@ export function validateBrief(content) {
 }
 
 // ---------------------------------------------------------------------------
-// Commands: check, list, handoff
+// Doability & Rabbit-Hole Scorer (b2i score)
+// ---------------------------------------------------------------------------
+
+export function scoreBrief(content) {
+  const valid = validateBrief(content);
+  if (!valid.ok) {
+    return {
+      ok: false,
+      score: 0,
+      grade: 'INVALID',
+      notes: valid.errors,
+      breakdown: { scope: 0, rabbitHoles: 0, alignment: 0 },
+      warnings: valid.warnings,
+      tips: ['Fix the 7 check errors first before scoring doability.'],
+      meta: valid.meta,
+    };
+  }
+
+  const { sections, meta } = valid;
+  const outOfScope = sections['Out of scope'] || '';
+  const goal = sections['Goal'] || '';
+  const flows = sections['Core flows'] || sections['Public API'] || '';
+
+  // 1. Scope Cut Score (30 pts max)
+  const oosBullets = outOfScope
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^[-*]\s+.+/.test(l)).length;
+  let scopeScore = 0;
+  if (oosBullets >= 2) scopeScore = 30;
+  else if (oosBullets === 1) scopeScore = 15;
+
+  // 2. Rabbit-Hole Immunity (40 pts max)
+  const activeScope = `${meta.name} ${goal} ${flows}`;
+  const detectedRabbitHoles = [];
+  const mitigatedRabbitHoles = [];
+
+  for (const rh of RABBIT_HOLES) {
+    const inOutOfScope = rh.pattern.test(outOfScope);
+    const inActiveScope = rh.pattern.test(activeScope);
+
+    if (inOutOfScope) {
+      mitigatedRabbitHoles.push(rh);
+    } else if (inActiveScope) {
+      detectedRabbitHoles.push(rh);
+    }
+  }
+
+  const penalty = detectedRabbitHoles.length * 15;
+  const rabbitHoleScore = Math.max(0, 40 - penalty);
+
+  // 3. Template-Flow Alignment & Risk Awareness (30 pts max)
+  let alignmentScore = 15; // base for valid template
+  const risksKey = Object.keys(sections).find((k) => /^Risks/i.test(k));
+  if (risksKey && sections[risksKey]) {
+    const hasAssumptions = /[-*]\s+(ASSUMPTION:|RISK:)/i.test(sections[risksKey]);
+    if (hasAssumptions) alignmentScore += 10;
+  }
+  const notesKey = Object.keys(sections).find((k) => /^Notes$/i.test(k));
+  if (!notesKey || sections[notesKey].split(/\r?\n/).filter((l) => /^[-*]/.test(l.trim())).length <= 6) {
+    alignmentScore += 5;
+  }
+
+  // Template mismatch heuristic
+  let templateMismatch = null;
+  if (meta.template === 'cli' && /\b(browser|html|css|dom|react|component)\b/i.test(flows)) {
+    templateMismatch = 'template "cli" describes browser/DOM elements in flows';
+    alignmentScore = Math.max(0, alignmentScore - 10);
+  } else if (meta.template === 'library' && !/\b(function|export|api|method|class|module)\b/i.test(flows)) {
+    templateMismatch = 'template "library" should describe exported functions/API in flows';
+    alignmentScore = Math.max(0, alignmentScore - 5);
+  }
+
+  const totalScore = Math.min(100, Math.max(0, scopeScore + rabbitHoleScore + alignmentScore));
+
+  let letterGrade = 'F';
+  if (totalScore >= 90) letterGrade = 'A';
+  else if (totalScore >= 80) letterGrade = 'B';
+  else if (totalScore >= 70) letterGrade = 'C';
+  else if (totalScore >= 60) letterGrade = 'D';
+
+  let grade = 'HIGH RISK';
+  if (totalScore >= 90) grade = 'EXCELLENT';
+  else if (totalScore >= 75) grade = 'GOOD';
+  else if (totalScore >= 50) grade = 'MODERATE';
+
+  const tips = [];
+  for (const drh of detectedRabbitHoles) {
+    tips.push(`⚠️ Detected ${drh.label}: ${drh.fix} (-15 pts)`);
+  }
+  for (const mrh of mitigatedRabbitHoles) {
+    tips.push(`✓ Mitigated ${mrh.label}: explicitly marked in Out of scope`);
+  }
+  if (oosBullets < 2) {
+    tips.push('💡 Add ≥2 non-goals to ## Out of scope to strengthen the prototype boundary.');
+  }
+  if (templateMismatch) {
+    tips.push(`💡 Alignment notice: ${templateMismatch}`);
+  }
+
+  return {
+    ok: true,
+    score: totalScore,
+    grade,
+    letterGrade,
+    breakdown: {
+      scope: scopeScore,
+      rabbitHoles: rabbitHoleScore,
+      alignment: alignmentScore,
+    },
+    warnings: valid.warnings,
+    tips,
+    meta: valid.meta,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Commands: check, score, list, handoff
 // ---------------------------------------------------------------------------
 
 export function cmdCheck(args) {
@@ -263,6 +388,40 @@ export function cmdCheck(args) {
   }
 
   return result.ok ? 0 : 1;
+}
+
+export function cmdScore(args) {
+  const isJson = args.includes('--json');
+  const briefPath = args.find((a) => !a.startsWith('--')) ?? './brief.md';
+  const resolved = resolve(process.cwd(), briefPath);
+
+  if (!existsSync(resolved)) {
+    if (isJson) {
+      console.log(JSON.stringify({ ok: false, error: `file not found: ${briefPath}` }, null, 2));
+    } else {
+      console.error(`Brainstorm2idea score — FAIL\n  file not found: ${briefPath}`);
+    }
+    return 1;
+  }
+
+  const content = readFileSync(resolved, 'utf8');
+  const result = scoreBrief(content);
+
+  if (isJson) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    if (!result.ok) {
+      console.error(`Brainstorm2idea score — INVALID (0/100)`);
+      for (const err of result.notes.slice(0, 3)) console.error(`  ${err}`);
+      return 1;
+    }
+    console.log(`Brainstorm2idea score — ${result.score}/100 (Grade ${result.letterGrade} - ${result.grade})`);
+    console.log(`  breakdown: scope=${result.breakdown.scope}/30, infra=${result.breakdown.rabbitHoles}/40, alignment=${result.breakdown.alignment}/30`);
+    for (const tip of result.tips) {
+      console.log(`  ${tip}`);
+    }
+  }
+  return 0;
 }
 
 export function cmdList(args) {
@@ -332,6 +491,7 @@ export function cmdHandoff(args) {
   let dir = null;
   let briefPath = './brief.md';
   let i2pOverride = null;
+  let targetMode = 'i2p'; // 'i2p' | 'raw'
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -339,13 +499,15 @@ export function cmdHandoff(args) {
       briefPath = args[++i];
     } else if (a === '--i2p' && args[i + 1]) {
       i2pOverride = args[++i];
+    } else if (a === '--target' && args[i + 1]) {
+      targetMode = args[++i].toLowerCase();
     } else if (!a.startsWith('--') && !dir) {
       dir = a;
     }
   }
 
   if (!dir) {
-    const err = 'usage: b2i handoff <dir> [--brief <path>] [--i2p <path>] [--dry-run] [--json]';
+    const err = 'usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]';
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
     else console.error(err);
     return 1;
@@ -386,7 +548,67 @@ export function cmdHandoff(args) {
 
   const { name, distilled, template } = briefResult.meta;
 
-  // Determine scaffold command & args
+  // -------------------------------------------------------------------------
+  // TARGET: RAW (Universal standalone handoff for Next.js, Vite, FastAPI, Go, etc.)
+  // -------------------------------------------------------------------------
+  if (targetMode === 'raw') {
+    const targetDir = resolve(process.cwd(), dir);
+    const targetPrototype = join(targetDir, 'PROTOTYPE.md');
+
+    const flowsHeader = template === 'library'
+      ? `## Public API\n${briefResult.sections['Public API'] || briefResult.sections['Core flows'] || ''}`
+      : `## Core flows\n${briefResult.sections['Core flows'] || ''}`;
+
+    let content = `# Prototype spec — ${name}\n\n> Idea: ${distilled}\n\n## Goal\n${briefResult.sections['Goal'] || ''}\n\n${flowsHeader}\n\n## Out of scope\n${briefResult.sections['Out of scope'] || ''}\n`;
+
+    const risksKey = Object.keys(briefResult.sections).find((k) => /^Risks/i.test(k));
+    if (risksKey && briefResult.sections[risksKey]) {
+      content += `\n## Risks & assumptions\n${briefResult.sections[risksKey]}\n`;
+    }
+
+    const notesKey = Object.keys(briefResult.sections).find((k) => /^Notes$/i.test(k));
+    if (notesKey && briefResult.sections[notesKey]) {
+      content += `\n## Notes\n${briefResult.sections[notesKey]}\n`;
+    }
+
+    if (isDryRun) {
+      if (isJson) {
+        console.log(JSON.stringify({ ok: true, dryRun: true, target: 'raw', dir, prototypePreview: content }, null, 2));
+      } else {
+        console.log('Brainstorm2idea handoff — DRY RUN (raw target)');
+        console.log(`  target dir: ${dir}`);
+        console.log('\nPreview of PROTOTYPE.md:\n' + '-'.repeat(40) + '\n' + content + '-'.repeat(40));
+      }
+      return 0;
+    }
+
+    if (!existsSync(targetDir)) {
+      mkdirSync(targetDir, { recursive: true });
+    }
+    writeFileSync(targetPrototype, content.trimEnd() + '\n', 'utf8');
+
+    try {
+      unlinkSync(resolvedBrief);
+    } catch {
+      // ignore unlink failure
+    }
+
+    if (isJson) {
+      console.log(JSON.stringify({ ok: true, status: 'scaffolded', target: 'raw', dir, template, name, prototype: targetPrototype }, null, 2));
+    } else {
+      console.log('Brainstorm2idea handoff — SUCCESS (raw target)');
+      console.log(`  project: ${dir} (${template} template)`);
+      console.log(`  spec:    ${join(dir, 'PROTOTYPE.md')} (source brief moved)`);
+      console.log(`\nNext steps:`);
+      console.log(`  cd ${dir}`);
+      console.log(`  Implement flows according to ${join(dir, 'PROTOTYPE.md')}`);
+    }
+    return 0;
+  }
+
+  // -------------------------------------------------------------------------
+  // TARGET: I2P (idea2prototype scaffold + merge)
+  // -------------------------------------------------------------------------
   let cmd = '';
   let cmdArgs = [];
 
@@ -419,14 +641,14 @@ export function cmdHandoff(args) {
     }
   }
 
-  // Dry-run mode
+  // Dry-run mode for i2p
   if (isDryRun) {
     const flowsHeader = template === 'library' ? '## Public API\n<!-- The 1-3 functions -->\n1.' : '## Core flows\n<!-- The 1-3 user flows -->\n1.';
     const syntheticPrototype = `# Prototype spec — ${name}\n\n> Idea: ${distilled}\n\n## Goal\n<!-- Goal -->\n-\n\n${flowsHeader}\n\n## Modules (optional)\n-\n\n## Out of scope\n-\n`;
     const mergedPreview = mergeSectionsIntoPrototype(syntheticPrototype, briefResult);
 
     if (isJson) {
-      console.log(JSON.stringify({ ok: true, dryRun: true, command: [cmd, ...cmdArgs], prototypePreview: mergedPreview }, null, 2));
+      console.log(JSON.stringify({ ok: true, dryRun: true, target: 'i2p', command: [cmd, ...cmdArgs], prototypePreview: mergedPreview }, null, 2));
     } else {
       console.log('Brainstorm2idea handoff — DRY RUN');
       console.log(`  command: ${cmd} ${cmdArgs.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}`);
@@ -485,7 +707,7 @@ export function cmdHandoff(args) {
   }
 
   if (isJson) {
-    console.log(JSON.stringify({ ok: true, dir, template, name, prototype: targetPrototype }, null, 2));
+    console.log(JSON.stringify({ ok: true, status: 'scaffolded', target: 'i2p', dir, template, name, prototype: targetPrototype }, null, 2));
   } else {
     console.log(`Brainstorm2idea handoff — SUCCESS`);
     console.log(`  project: ${dir} (${template} template)`);
@@ -509,6 +731,8 @@ export function main(argv = process.argv.slice(2)) {
   switch (command) {
     case 'check':
       return cmdCheck(rest);
+    case 'score':
+      return cmdScore(rest);
     case 'list':
       return cmdList(rest);
     case 'handoff':
@@ -525,7 +749,8 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`brainstorm2idea v${VERSION} — turn fuzzy ideas into linted prototype briefs`);
       console.log(`\nUsage:`);
       console.log(`  b2i check [brief] [--json]`);
-      console.log(`  b2i handoff <dir> [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
+      console.log(`  b2i score [brief] [--json]`);
+      console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);
       console.log(`  b2i version`);
       return 0;

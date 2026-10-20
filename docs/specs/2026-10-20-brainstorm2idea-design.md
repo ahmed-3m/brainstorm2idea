@@ -100,19 +100,35 @@ Brainstorm2idea check — PASS (7/7)
 
 On failure: `Brainstorm2idea check — FAIL (X/7)`, followed by **at most 3 failure notes** (e.g., `goal: 4 bullets, max 3`), exit `1`. Soft warnings print only when applicable and do not fail the check. `--json` returns `{ ok: boolean, passed: number, total: 7, errors: string[], warnings: string[], meta: { schema, template, name, distilled } }`.
 
-### `b2i handoff <dir> [--brief <path>] [--i2p <version|path>] [--dry-run] [--json]`
+### `b2i score [brief] [--json]`
 
-1. **Load & Pre-Flight Check:** Load the brief (default `./brief.md`, overridable via `--brief <path>`). Run the `check` validator in-memory first. If `check` fails, print the failure verdict (≤3 notes) and exit `1` before touching `<dir>` or invoking `i2p`.
+Default path: `./brief.md`. Computes a 0–100 Doability & Rabbit-Hole score with letter grades (A: 90–100, B: 80–89, C: 70–79, D: 60–69, F: <60). Advisory only (always exits 0).
+
+1. **Scope Discipline (30 pts max):** Checks `## Out of scope` count. $\ge 2$ non-goals = 30 pts, 1 = 15 pts, 0 = 0 pts.
+2. **Rabbit-Hole Immunity (40 pts max):** Scans for 8 high-risk engineering killers: `auth`, `payments`, `multi-tenant`, `crypto/blockchain`, `custom ML training`, `native apps`, `real-time video/audio`, `distributed consensus`.
+   - If a pattern is in `## Out of scope`, it is safely mitigated (0 deduction).
+   - If a pattern is detected in other sections (e.g. `## Core flows`), -15 pts per unmitigated killer.
+3. **Template Fit & Feasibility (30 pts max):** 10 pts for concise goal (1–2 bullets), 10 pts for focused flows (1–3 items), 10 pts for presence of `ASSUMPTION:` or `RISK:` lines.
+
+Output format:
+```text
+Brainstorm2idea score — 100/100 (Grade A)
+```
+`--json` returns `{ ok: true, score: 100, grade: "A", deductions: [...], mitigated: [...] }`.
+
+### `b2i handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]`
+
+1. **Load & Pre-Flight Check:** Load the brief (default `./brief.md`, overridable via `--brief <path>`). Run the `check` validator in-memory first. If `check` fails, print the failure verdict (≤3 notes) and exit `1` before touching `<dir>` or invoking any tool.
 2. **Brief-Only Mode:** If `template: none` → decline politely (`Brief-only mode (template: none) — handoff skipped.`), exit `0`.
-3. **Scaffold via `i2p` (Shell-Safe Execution):** Invoke `i2p` using `child_process.spawnSync` with `shell: false` (passing arguments as an OS array to prevent quote/variable injection in `<H1>` or `<distilled>`):
-   * Default: `npx -y @ahmed-3m/idea2prototype@latest new <dir> --template <t> --name <H1> --idea <distilled>` (using `npx.cmd` on Windows when needed, or `node <path>` if `--i2p` points to a local `.mjs`/`.js` script or `B2I_HANDOFF_CMD` is set).
-   * Directory-emptiness rules are delegated to `i2p new`; if `i2p new` fails, `b2i` surfaces its stderr/stdout and exits `1` with `brief.md` untouched.
-4. **Merge-Then-Move:** Update the newly scaffolded `<dir>/PROTOTYPE.md` by section name:
-   * Replace `## Goal`, `## Core flows`, and `## Out of scope` with the brief's content.
+3. **Scaffolding Target Selection:**
+   - `--target i2p` (default): Scaffolds via `idea2prototype` (`i2p new <dir> ...`), then merges the brief sections into `<dir>/PROTOTYPE.md` and removes `brief.md`.
+   - `--target raw`: Zero-dependency standalone scaffolder. Creates `<dir>/` and writes `<dir>/PROTOTYPE.md` directly from the brief without requiring `i2p` or network access. Ideal for Python, Go, Rust, or custom non-JS stacks.
+4. **Merge-Then-Move:** For `i2p` target, update the newly scaffolded `<dir>/PROTOTYPE.md` by section name:
+   * Replace `## Goal`, `## Core flows` (or `## Public API`), and `## Out of scope` with the brief's content.
    * Append/merge `## Risks & assumptions` and `## Notes` (if present in `brief.md`) so zero context is lost.
    * Preserve any additional `i2p` sections that `b2i` doesn't own (never discard unknown content).
-   * Delete the original `brief.md` **only after** `i2p new` succeeds and `<dir>/PROTOTYPE.md` is written atomically.
-5. **Next Steps Output:** Print `cd <dir>`, `npm run check`, the `i2p add` loop, and a pointer for coding agents to load `<dir>/AGENTS.md` (or `CLAUDE.md`).
+   * Delete the original `brief.md` **only after** scaffolding succeeds and `<dir>/PROTOTYPE.md` is written atomically.
+5. **Next Steps Output:** Print `cd <dir>`, `npm run check`, the `i2p add` loop, and a pointer for coding agents to load `<dir>/AGENTS.md` (or `CLAUDE.md` / `PROTOTYPE.md`).
 6. **`--dry-run`:** Runs pre-flight check and prints the exact command array + preview of the merged `PROTOTYPE.md` without executing or modifying disk.
 
 **Graceful Degradation & Exit Codes:**
@@ -230,8 +246,21 @@ brainstorm2idea/
 
 Personas, success metrics, competitor scanning, PRD-lite output, suggested `add` modules, an `init` command, multi-brief management, invoking `i2p` from inside `check`.
 
-## 10. Roadmap (Post-v1)
+## 10. Versions & Roadmap
 
-1. Dogfooding benchmark doc, mirroring `i2p`'s pre-registered paired protocol (`benchmarks/specs.md`).
-2. `b2i init` only if non-agent humans ask for it.
-3. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.
+### v0.1.0 (Initial Release)
+- Schema contract `b2i-brief@1`
+- 7 hard lint checks (`b2i check`)
+- Deterministic shell-safe scaffolding handoff into `idea2prototype` (`b2i handoff`)
+- Token-budgeted dialogue protocol (`skills/brainstorm2idea/SKILL.md`)
+
+### v0.2.0 (Doability Scorer & Stack Agility)
+- `b2i score`: 0–100 Doability & Rabbit-Hole detector with letter grades (A–F) and pattern quarantine
+- `b2i handoff --target raw`: Zero-dependency markdown brief scaffolding for non-JS / polyglot stacks
+- `/b2i-dump`: Voice memo / raw stream-of-consciousness fast de-noiser
+- Pre-registered ideation benchmarks (`benchmarks/specs.md`)
+- Interactive modal questions via `ask_question`
+
+### Future (Post-v0.2.0)
+1. `b2i init` only if non-agent humans ask for it.
+2. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.

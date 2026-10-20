@@ -8,6 +8,8 @@ import {
   parseSections,
   validateBrief,
   mergeSectionsIntoPrototype,
+  scoreBrief,
+  RABBIT_HOLES,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
   VERSION,
@@ -325,5 +327,119 @@ distilled: "CLI 'tool': test $VAR & pipe | redirect"
     assert.match(proto, /Special & "Safe" \$App/);
     assert.match(proto, /CLI 'tool': test \$VAR & pipe \| redirect/);
     assert.equal(existsSync(specialBrief), false);
+  });
+
+  test('handoff --target raw creates standalone PROTOTYPE.md without i2p dependency', () => {
+    const targetDir = join(TMP_DIR, 'raw-app');
+    const tempBrief = join(TMP_DIR, 'raw-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(['handoff', targetDir, '--target', 'raw', '--brief', tempBrief]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea handoff — SUCCESS \(raw target\)/);
+    assert.equal(existsSync(tempBrief), false, 'source brief is moved/removed');
+
+    const protoPath = join(targetDir, 'PROTOTYPE.md');
+    assert.ok(existsSync(protoPath), 'PROTOTYPE.md created');
+    const protoContent = readFileSync(protoPath, 'utf8');
+    assert.match(protoContent, /# Prototype spec — Recipe Box/);
+    assert.match(protoContent, /## Goal/);
+    assert.match(protoContent, /## Core flows/);
+    assert.match(protoContent, /## Out of scope/);
+  });
+
+  test('handoff --target raw --dry-run previews scaffold without writing disk', () => {
+    const targetDir = join(TMP_DIR, 'raw-dry-run-app');
+    const tempBrief = join(TMP_DIR, 'raw-dry-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(['handoff', targetDir, '--target', 'raw', '--brief', tempBrief, '--dry-run']);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea handoff — DRY RUN \(raw target\)/);
+    assert.equal(existsSync(targetDir), false, 'target dir is not created on dry-run');
+    assert.equal(existsSync(tempBrief), true, 'brief is untouched on dry-run');
+  });
+
+  test('handoff --target raw --json outputs structured payload', () => {
+    const targetDir = join(TMP_DIR, 'raw-json-app');
+    const tempBrief = join(TMP_DIR, 'raw-json-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(['handoff', targetDir, '--target', 'raw', '--brief', tempBrief, '--json']);
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.target, 'raw');
+    assert.equal(parsed.status, 'scaffolded');
+  });
+});
+
+describe('5. Doability Scorer (scoreBrief & b2i score)', () => {
+  test('scoreBrief awards high score to well-scoped brief', () => {
+    const content = readFileSync(join(FIXTURES_DIR, 'valid-brief.md'), 'utf8');
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.ok(result.score >= 75);
+    assert.ok(['GOOD', 'EXCELLENT'].includes(result.grade));
+    assert.ok(result.breakdown.scope > 0);
+  });
+
+  test('scoreBrief identifies and mitigates rabbit holes in out-of-scope', () => {
+    const content = readFileSync(join(FIXTURES_DIR, 'rabbit-hole-brief.md'), 'utf8');
+    const result = scoreBrief(content);
+    assert.equal(result.ok, true);
+    assert.equal(result.breakdown.rabbitHoles, 40, 'full rabbit holes score when all mitigated');
+    assert.ok(result.tips.some((t) => t.includes('Mitigated OAuth/SSO')));
+    assert.ok(result.tips.some((t) => t.includes('Mitigated Payment gateway')));
+  });
+
+  test('scoreBrief penalizes unmitigated rabbit holes in core flows', () => {
+    const unmitigated = `---
+schema: b2i-brief@1
+template: web
+distilled: Shopping app with real-time Stripe checkout and OAuth SSO
+---
+# Dangerous App
+
+## Goal
+- Build checkout and auth
+
+## Core flows
+1. User logs in using oauth sso
+2. User pays with stripe checkout
+
+## Out of scope
+- Mobile apps
+`;
+    const result = scoreBrief(unmitigated);
+    assert.equal(result.ok, true);
+    // 2 rabbit holes in flows: OAuth and Stripe (-30 pts from 40 = 10 pts)
+    assert.equal(result.breakdown.rabbitHoles, 10);
+    assert.ok(result.tips.some((t) => t.includes('Detected OAuth/SSO')));
+    assert.ok(result.tips.some((t) => t.includes('Detected Payment gateway')));
+  });
+
+  test('scoreBrief returns 0 and INVALID grade for broken briefs', () => {
+    const content = readFileSync(join(FIXTURES_DIR, 'fail-no-h1.md'), 'utf8');
+    const result = scoreBrief(content);
+    assert.equal(result.ok, false);
+    assert.equal(result.score, 0);
+    assert.equal(result.grade, 'INVALID');
+  });
+
+  test('b2i score CLI outputs human verdict with grade', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'valid-brief.md')]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea score — \d+\/100 \(Grade/);
+  });
+
+  test('b2i score --json CLI outputs machine-readable breakdown', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'rabbit-hole-brief.md'), '--json']);
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.ok(parsed.score >= 0);
+    assert.ok(parsed.breakdown);
+    assert.equal(parsed.breakdown.rabbitHoles, 40);
   });
 });

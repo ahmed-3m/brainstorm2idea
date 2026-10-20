@@ -1,6 +1,6 @@
 # brainstorm2idea — Design Spec
 
-**Date:** 2026-10-20 · **Status:** approved design, pre-implementation (v2 — incorporates shell-safety, parser, merge, exit-code, and multi-agent fixes) · **Repo:** `github.com/ahmed-3m/brainstorm2idea`
+**Date:** 2026-10-20 · **Status:** implemented at v0.4.0 (v2 — incorporates shell-safety, parser, merge, exit-code, and multi-agent fixes) · **Repo:** `github.com/ahmed-3m/brainstorm2idea`
 
 ## 1. One-liner
 
@@ -69,7 +69,7 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 * **Name** = the first H1 (`# ...`) text; feeds `i2p new --name`. Must be non-empty.
 * **distilled** = the ≤200-char one-liner passed verbatim to `i2p new --idea`. Required in every brief, including `template: none`.
 * **Frontmatter parsing (Zero-Dep Safety):** The custom frontmatter parser must split keys and values on the *first* `:` of each line (`line.slice(line.indexOf(':') + 1)`), stripping inline `# comments` (only when outside quotes) and optional surrounding `"` or `'` quotes, so colons inside `distilled` (e.g., `distilled: "Log tool: parse and export"`) never break parsing.
-* **template** must match one of `i2p`'s published templates (`web | api | cli | worker | library`) or `none`. The enum is a pinned constant in the engine; drift against a future `i2p` template surfaces as an informational note, never a hard failure unless strictly invalid.
+* **template** must match one of `i2p`'s published templates (`web | api | cli | worker | library`) or `none`. The enum is a pinned constant in the engine; `i2p`'s own template set is a **live directory scan** (`i2p list` enumerates `TEMPLATES_DIR`), so drift against a future `i2p` template surfaces as an **actionable** informational note ("i2p may support newer templates — run `i2p list`"), never a hard failure unless strictly invalid.
 * **Risks & assumptions** is optional; when present, bullets should be prefixed `RISK:` or `ASSUMPTION:` (format is lint-soft: warned, not failed, in v1).
 * **Notes** is optional, ≤6 bullets, free content — the dynamic escape valve for details that don't fit fixed sections. Soft-linted (warn only); deliberately *not* one of the seven hard checks.
 * **Schema versioning:** An unknown/future `schema:` value lints everything it knows and appends an informational drift note. The version is the only coupling interface with `i2p` or custom consumers.
@@ -122,12 +122,14 @@ Brainstorm2idea score — 100/100 (Grade A)
 2. **Brief-Only Mode:** If `template: none` → decline politely (`Brief-only mode (template: none) — handoff skipped.`), exit `0`.
 3. **Scaffolding Target Selection:**
    - `--target i2p` (default): Scaffolds via `idea2prototype` (`i2p new <dir> ...`), then merges the brief sections into `<dir>/PROTOTYPE.md` and removes `brief.md`.
+     **Invocation resolution order (Windows-safe; verified against Node's CVE-2024-27980 patch, where spawning a `.cmd`/`.bat` without `shell:true` throws `EINVAL` on every Node ≥ 18.20 / 20.12 / 21.7):** (a) `--i2p <path>` or `B2I_HANDOFF_CMD` pointing at a local `.mjs` → `spawnSync(process.execPath, [script, 'new', …], {shell:false})` — no shell anywhere, fully injection-safe, also the air-gapped/test mode; (b) Unix default → `spawnSync('npx', ['-y', '@ahmed-3m/idea2prototype@latest', 'new', …], {shell:false})`; (c) Windows default → `npx.cmd` with `shell:true` + an argv-quoting helper. Compensating control for (c): a **soft lint warning on shell metacharacters** (`& | ; < > ^ % \` $ "`) in name/distilled — the earlier "npx.cmd with shell:false" plan cannot work and is corrected here.
    - `--target raw`: Zero-dependency standalone scaffolder. Creates `<dir>/` and writes `<dir>/PROTOTYPE.md` directly from the brief without requiring `i2p` or network access. Ideal for Python, Go, Rust, or custom non-JS stacks.
-4. **Merge-Then-Move:** For `i2p` target, update the newly scaffolded `<dir>/PROTOTYPE.md` by section name:
-   * Replace `## Goal`, `## Core flows` (or `## Public API`), and `## Out of scope` with the brief's content.
-   * Append/merge `## Risks & assumptions` and `## Notes` (if present in `brief.md`) so zero context is lost.
-   * Preserve any additional `i2p` sections that `b2i` doesn't own (never discard unknown content).
-   * Delete the original `brief.md` **only after** scaffolding succeeds and `<dir>/PROTOTYPE.md` is written atomically.
+4. **Merge-Then-Move (body-only; verified against i2p source):** i2p's `new` already stamps `# Prototype spec — {{name}}` and `> Idea: {{idea}}` from the flags (engine `cmdNew`) — so the merge operates **only on sections below the H1**: never insert the brief's H1 (no double title), never re-add `distilled` (no duplicate idea line). Name and distilled flow exclusively through `--name`/`--idea`; the body carries only section content. By section name:
+   * **Replace** `## Goal`, `## Core flows` (or `## Public API` via the library alias), and `## Out of scope` with the brief's content, **dropping the placeholder `<!-- ... -->` guidance comments** i2p ships inside each section (leaving them reads as unfilled scaffolding).
+   * **Append/merge** `## Risks & assumptions` and `## Notes` (if present in `brief.md`) so zero context is lost.
+   * **Preserve** any additional `i2p` sections that `b2i` doesn't own — notably `## Modules (optional)` — never discard unknown content.
+   * Delete the original `brief.md` **only after** scaffolding succeeds and `<dir>/PROTOTYPE.md` is written atomically (tmp file + rename).
+   * **`--target raw`** uses the **same body-only merge rules** applied to a from-scratch `PROTOTYPE.md`: H1 `# Prototype spec — {{name}}`, `> Idea: {{idea}}`, then the brief's sections — the two targets stay byte-consistent in structure so `export` and downstream tooling see one shape.
 5. **Next Steps Output:** Print `cd <dir>`, `npm run check`, the `i2p add` loop, and a pointer for coding agents to load `<dir>/AGENTS.md` (or `CLAUDE.md` / `PROTOTYPE.md`).
 6. **`--dry-run`:** Runs pre-flight check and prints the exact command array + preview of the merged `PROTOTYPE.md` without executing or modifying disk.
 
@@ -198,6 +200,8 @@ Intake raw idea without judgment → infer every field already answered → ask 
 
 **Token Discipline:** Diff-sized edits, never re-print the whole brief on minor tweaks, print verdicts instead of raw logs.
 
+**Structural awareness:** the dialogue does not need to know about `## Public API` or `# Prototype spec —` — it always writes the brief with `## Core flows` and `# <name>`; the **engine** applies the library alias and body-only merge at handoff (single transformation point). What the skill *does* tell the agent: for `template: library`, word each flow as an exported function (`"parseLogFile(path) → entries[]"`) so the content reads naturally once it lands under `## Public API`.
+
 ## 6. Repo Layout & Distribution
 
 ```text
@@ -238,7 +242,7 @@ brainstorm2idea/
   1. Pre-flight check blocks invalid briefs before invoking `i2p`.
   2. Special characters (quotes, `$vars`, colons, backticks) in H1 and `distilled` pass safely without shell corruption.
   3. `Goal`, `Core flows`, `Out of scope`, `Risks & assumptions`, and `Notes` merge cleanly into `PROTOTYPE.md`, unknown `i2p` sections survive, and `brief.md` is removed only on success.
-  4. The resulting merged `PROTOTYPE.md` satisfies `i2p check` structural expectations.
+  4. The resulting merged `PROTOTYPE.md` satisfies a **structural sanity** contract — single H1, exactly one `> Idea:` line, no empty owned sections, no leftover `{{` placeholders. (Verified against i2p source: `i2p check` never reads `PROTOTYPE.md` — it is syntax+tests+boot only — so a literal "satisfies i2p check" assertion would be vacuous.)
   5. `--dry-run` leaves the filesystem untouched.
 * **Consistency test:** Verifies that the engine's template enum (`web | api | cli | worker | library | none`) and schema constant (`b2i-brief@1`) match `SKILL.md` and `README.md`.
 

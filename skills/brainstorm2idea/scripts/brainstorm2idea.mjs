@@ -1725,6 +1725,106 @@ export function exportBrief(content, options = {}) {
   throw new Error(`unhandled format "${format}"`);
 }
 
+export function cmdDump(args) {
+  const isJson = args.includes('--json');
+  let outputPath = null;
+  let inputPath = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--output' && args[i + 1]) {
+      outputPath = args[++i];
+    } else if (!a.startsWith('--') && !inputPath) {
+      inputPath = a;
+    }
+  }
+
+  let content;
+  if (!inputPath || inputPath === '-') {
+    try {
+      content = readFileSync(0, 'utf8');
+    } catch (err) {
+      const msg = `failed to read stdin: ${err.message}`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(`Brainstorm2idea dump — ${c.red('FAIL')}\n  ${msg}`);
+      return 1;
+    }
+  } else {
+    const resolved = resolve(process.cwd(), inputPath);
+    if (!existsSync(resolved)) {
+      const msg = `file not found: ${inputPath}`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+      else console.error(`Brainstorm2idea dump — ${c.red('FAIL')}\n  ${msg}`);
+      return 1;
+    }
+    content = readFileSync(resolved, 'utf8');
+  }
+
+  // De-noise: strip common conversational filler and meta-commentary
+  const fillerPatterns = [
+    /^(um|uh|like|you know|i mean|so|basically|actually|honestly|literally)\b/i,
+    /^(hey|hi|hello|so i was thinking|you know how|well)\b/i,
+    /^(okay|ok|right|sure|yeah|yep|nope)\b/i,
+  ];
+
+  const lines = content.split(/\r?\n/);
+  const kept = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true; // keep blank lines for paragraph structure
+    return !fillerPatterns.some((p) => p.test(trimmed));
+  });
+
+  const denoised = kept.join('\n').trim();
+
+  // Extract a distilled one-liner (first meaningful sentence, capped at 200 chars)
+  const firstSentence = denoised
+    .split(/[.!?]\s+/)
+    .find((s) => s.trim().length > 10)
+    ?.trim() || denoised.slice(0, 100);
+  const distilled = firstSentence.slice(0, 200);
+
+  const draft = `---
+schema: ${SCHEMA_VERSION}
+template: none
+distilled: "${distilled}"
+---
+# Draft Prototype
+
+## Goal
+- TODO: Define the primary user problem and solution
+
+## Core flows
+1. TODO: Smallest demoable flow (1-3 numbered items)
+
+## Out of scope
+- TODO: Non-goals to exclude from prototype
+
+## Risks & assumptions
+- ASSUMPTION: Inferred from input dump; needs human confirmation
+
+## Notes
+- Source: ${inputPath || 'stdin'}
+- De-noised by b2i dump; fill in all TODO sections before running b2i check.
+`;
+
+  const output = draft.trimEnd() + '\n';
+
+  if (outputPath) {
+    const resolvedOut = resolve(process.cwd(), outputPath);
+    writeFileSync(resolvedOut, output, 'utf8');
+    if (isJson) {
+      console.log(JSON.stringify({ ok: true, output: resolvedOut }, null, 2));
+    } else {
+      console.log(`Brainstorm2idea dump — ${c.green('SUCCESS')}`);
+      console.log(`  output: ${resolvedOut}`);
+    }
+  } else {
+    process.stdout.write(output.endsWith('\n') ? output : output + '\n');
+  }
+
+  return 0;
+}
+
 export function cmdExport(args) {
   const isJson = args.includes('--json');
   let format = isJson ? 'json' : 'prompt';
@@ -1813,6 +1913,8 @@ export function main(argv = process.argv.slice(2)) {
       return cmdSpark(rest);
     case 'export':
       return cmdExport(rest);
+    case 'dump':
+      return cmdDump(rest);
     case 'list':
       return cmdList(rest);
     case 'handoff':
@@ -1832,6 +1934,7 @@ export function main(argv = process.argv.slice(2)) {
       console.log(`  b2i score [brief] [--json]`);
       console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
       console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);
+      console.log(`  b2i dump [file|-] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);
       console.log(`  b2i version`);

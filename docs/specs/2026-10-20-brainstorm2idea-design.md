@@ -271,6 +271,12 @@ Personas, success metrics, competitor scanning, PRD-lite output, suggested `add`
 - Directory name security: Windows reserved device name (`CON`, `PRN`, `AUX`, `NUL`) and illegal filesystem character protections
 - Comprehensive stress test suite (`tests/stress.test.mjs`)
 
-### Future (Post-v0.3.0)
+### v0.4.0 (Export Engine, Terminal Styling & Benchmark Suite)
+- `b2i export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]`
+- `/b2i-export`: Slash command for exporting briefs to AI agents, GitHub tasks, or PRDs
+- Pure Node.js zero-dependency ANSI terminal styling (`c.green`, `c.red`, `c.yellow`, `c.cyan`, `c.bold`) respecting `NO_COLOR`, `FORCE_COLOR`, and `isTTY`
+- Automated benchmark test suite (`tests/benchmarks.test.mjs`) executing all 5 canonical scenarios from `benchmarks/specs.md`
+
+### Future (Post-v0.4.0)
 1. `b2i init` only if non-agent humans ask for it.
 2. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.

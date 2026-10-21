@@ -7,6 +7,7 @@
 - `b2i check [brief] --fix` — mechanical auto-repair for failing briefs, rewritten in place (file paths only): re-quotes frontmatter `schema`/`template`/`distilled` values that truncate on read-back (interior quotes, unquoted `#`), heals a missing/empty `schema:` key, and normalizes trailing whitespace/final newline while preserving CRLF. Never invents content; reports applied fixes (max 3 shown) and re-validates.
 - `b2i score --json` now includes a structured `categories` object — per-category sub-scores with maxima and the evidence behind each (`outOfScopeBullets`, detected rabbit holes with fixes, mitigated labels, `risksTagged`/`notesLean`/`templateMismatch`). The existing `breakdown` field is unchanged.
 - `fixBrief` engine export for programmatic consumers.
+- `i2p-contract` CI job: seeds a real brief and feeds `b2i handoff` output into the **published** `@ahmed-3m/idea2prototype@latest` on every push/PR plus a weekly schedule, so cross-repo interface drift fails CI instead of user terminals. Guarded by the consistency suite.
 
 ## [v0.4.1] — 2026-10-21
 

@@ -145,6 +145,17 @@ describe('Consistency Guards', () => {
     assert.match(ci, /parser\.mjs/, 'the smoke job asserts parser.mjs ships in the tarball');
   });
 
+  test('CI exercises the handoff contract against the published idea2prototype', () => {
+    // b2i handoff drives `npx @ahmed-3m/idea2prototype@latest` — a package we
+    // do not control. The i2p-contract job must keep feeding real handoff
+    // output into the published i2p so interface drift fails CI, not users.
+    const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
+    assert.match(ci, /i2p-contract:/, 'ci.yml defines the i2p-contract job');
+    assert.match(ci, /handoff contract-demo/, 'the job runs a real b2i handoff');
+    assert.match(ci, /PROTOTYPE\.md/, 'the job verifies the merged PROTOTYPE.md');
+    assert.match(ci, /cron:/, 'the workflow runs on a schedule to catch i2p drift');
+  });
+
   test('package.json ships every file the engine needs at runtime', () => {
     const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
     const files = pkg.files;

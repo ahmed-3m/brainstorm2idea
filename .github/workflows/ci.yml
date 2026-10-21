@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC — catches idea2prototype drift between b2i releases
 
 permissions:
   contents: read
@@ -84,3 +86,33 @@ jobs:
         run: |
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/parser.mjs"
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/SKILL.md"
+
+  i2p-contract:
+    # Cross-repo contract guard: feeds REAL `b2i handoff` output into the
+    # PUBLISHED @ahmed-3m/idea2prototype (npx @latest — the exact default
+    # users get). If i2p changes its CLI flags, exit codes, or stops writing
+    # PROTOTYPE.md, this job fails here instead of in a user's terminal.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Seed a real brief with the engine
+        run: |
+          node bin/b2i.mjs spark --seed env-diff --output "$RUNNER_TEMP/brief.md"
+          node bin/b2i.mjs check "$RUNNER_TEMP/brief.md"
+
+      - name: Hand off to the published idea2prototype
+        working-directory: ${{ runner.temp }}
+        run: node "$GITHUB_WORKSPACE/bin/b2i.mjs" handoff contract-demo --brief brief.md
+
+      - name: Verify the merged PROTOTYPE.md contract
+        run: |
+          P="$RUNNER_TEMP/contract-demo/PROTOTYPE.md"
+          test -f "$P"
+          grep -q '^## Goal' "$P"
+          grep -q '^## Out of scope' "$P"
+          grep -q 'Compare local .env against repository .env.example' "$P"
+          test ! -f "$RUNNER_TEMP/brief.md"  # brief is consumed only on verified success

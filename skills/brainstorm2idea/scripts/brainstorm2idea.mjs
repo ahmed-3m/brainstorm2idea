@@ -181,6 +181,12 @@ export function validateBrief(content) {
 // ---------------------------------------------------------------------------
 
 export function scoreBrief(content) {
+  const emptyCategories = {
+    scope: { score: 0, max: 30, outOfScopeBullets: 0 },
+    rabbitHoles: { score: 0, max: 40, detected: [], mitigated: [] },
+    alignment: { score: 0, max: 30, risksTagged: false, notesLean: false, templateMismatch: null },
+  };
+
   const valid = validateBrief(content);
   if (!valid.ok) {
     return {
@@ -189,6 +195,7 @@ export function scoreBrief(content) {
       grade: 'INVALID',
       notes: valid.errors,
       breakdown: { scope: 0, rabbitHoles: 0, alignment: 0 },
+      categories: emptyCategories,
       warnings: valid.warnings,
       tips: ['Fix the 7 check errors first before scoring doability.'],
       meta: valid.meta,
@@ -235,14 +242,14 @@ export function scoreBrief(content) {
   // 3. Template-Flow Alignment & Risk Awareness (30 pts max)
   let alignmentScore = 15; // base for valid template
   const risksContent = getSec(/^Risks/i);
-  if (risksContent) {
-    const hasAssumptions = /[-*+]\s+(ASSUMPTION:|RISK:)/i.test(risksContent);
-    if (hasAssumptions) alignmentScore += 10;
-  }
+  const risksTagged = Boolean(risksContent) && /[-*+]\s+(ASSUMPTION:|RISK:)/i.test(risksContent);
+  if (risksTagged) alignmentScore += 10;
   const notesContent = getSec(/^Notes$/i);
-  if (!notesContent || notesContent.split(/\r?\n/).filter((l) => /^[-*+]\s+.+/.test(l.trim())).length <= 6) {
-    alignmentScore += 5;
-  }
+  const notesBulletCount = notesContent
+    ? notesContent.split(/\r?\n/).filter((l) => /^[-*+]\s+.+/.test(l.trim())).length
+    : 0;
+  const notesLean = !notesContent || notesBulletCount <= 6;
+  if (notesLean) alignmentScore += 5;
 
   // Template mismatch heuristic
   let templateMismatch = null;
@@ -296,10 +303,134 @@ export function scoreBrief(content) {
       rabbitHoles: rabbitHoleScore,
       alignment: alignmentScore,
     },
+    // Structured per-category detail: same numbers as `breakdown` plus the
+    // evidence they were derived from, so agents can act on sub-scores
+    // without re-parsing human-readable tips.
+    categories: {
+      scope: {
+        score: scopeScore,
+        max: 30,
+        outOfScopeBullets: oosBullets,
+      },
+      rabbitHoles: {
+        score: rabbitHoleScore,
+        max: 40,
+        detected: detectedRabbitHoles.map((rh) => ({ label: rh.label, fix: rh.fix })),
+        mitigated: mitigatedRabbitHoles.map((rh) => rh.label),
+      },
+      alignment: {
+        score: alignmentScore,
+        max: 30,
+        risksTagged,
+        notesLean,
+        templateMismatch,
+      },
+    },
     warnings: valid.warnings,
     tips,
     meta: valid.meta,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Mechanical Auto-Fixer (b2i check --fix)
+// ---------------------------------------------------------------------------
+
+/**
+ * Repair mechanically broken briefs WITHOUT touching meaning.
+ *
+ * Fixers (all shape-only, never content-inventing):
+ *  - frontmatter schema/template/distilled values that truncate on read-back
+ *    (an opening quote with an earlier interior quote, or an unquoted value
+ *    cut short by an inline `#`) are re-emitted so they round-trip;
+ *  - a missing or empty `schema:` key is healed to the only valid schema;
+ *  - trailing whitespace is stripped, trailing blank lines collapsed, and a
+ *    single final newline ensured. Line endings (CRLF/LF) are preserved.
+ *
+ * Returns { content, fixes }: `content` is the repaired text or null when
+ * nothing changed; `fixes` lists human-readable notes (uncapped — callers
+ * enforce the ≤3 display discipline).
+ */
+export function fixBrief(content) {
+  const fixes = [];
+  const hadBom = String(content ?? '').startsWith('\uFEFF');
+  if (hadBom) fixes.push('stripped UTF-8 BOM');
+  const safe = String(content ?? '').replace(/^\uFEFF/, '');
+  const eol = safe.includes('\r\n') ? '\r\n' : '\n';
+  let text = safe;
+
+  const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (fmMatch) {
+    const meta = parseFrontmatter(text).meta;
+    const lines = fmMatch[1].split(/\r?\n/);
+    const out = [];
+    let touchedSchema = false;
+
+    for (const line of lines) {
+      const m = line.match(/^(\s*)(schema|template|distilled)\s*:\s*(.*)$/);
+      if (!m) {
+        out.push(line);
+        continue;
+      }
+      const [, indent, key, rawRaw] = m;
+      const raw = rawRaw.trim();
+
+      if (key === 'schema') {
+        touchedSchema = true;
+        if (!meta.schema) {
+          out.push(`${indent}schema: ${SCHEMA_VERSION}`);
+          fixes.push('schema: filled missing/empty schema key (b2i-brief@1)');
+        } else {
+          out.push(line);
+        }
+        continue;
+      }
+
+      // Detect values that do not survive a parse/read-back round-trip.
+      const q = raw[0];
+      let inner = raw;
+      let lossy = false;
+      if (q === '"' || q === "'") {
+        inner = raw.endsWith(q) && raw.length > 1 ? raw.slice(1, -1) : raw.slice(1);
+        lossy = inner.includes(q);
+      } else if (raw.includes('#')) {
+        lossy = true; // unquoted `#` is treated as a comment start by the parser
+      }
+
+      if (!lossy) {
+        out.push(line);
+        continue;
+      }
+
+      out.push(`${indent}${key}: "${quoteFrontmatterValue(inner)}"`);
+      fixes.push(`frontmatter: re-quoted ${key} value so it round-trips (interior quote/#)`);
+    }
+
+    if (!meta.schema && !touchedSchema) {
+      out.unshift(`schema: ${SCHEMA_VERSION}`);
+      fixes.push('schema: injected missing schema key (b2i-brief@1)');
+    }
+
+    text = `---${eol}${out.join(eol)}${eol}---${text.slice(fmMatch[0].length)}`;
+  }
+
+  // Whitespace pass: rstrip lines, collapse trailing blank lines, final \n.
+  const before = text;
+  const stripped = text.split(/\r?\n/).map((l) => l.replace(/[ \t]+$/, ''));
+  while (stripped.length > 1 && stripped[stripped.length - 1] === '') stripped.pop();
+  const fixedText = stripped.join(eol) + eol;
+  if (fixedText !== before) {
+    const kinds = [];
+    if (before.split(/\r?\n/).some((l) => /[ \t]+$/.test(l))) kinds.push('stripped trailing whitespace');
+    if (!before.endsWith('\n')) kinds.push('ensured final newline');
+    if (before.split(/\r?\n/).slice(-2).join('') === '' ) kinds.push('collapsed trailing blank lines');
+    fixes.push(`whitespace: ${kinds.length ? kinds.join(', ') : 'normalized'}`);
+  }
+
+  if (fixedText === String(content ?? '')) {
+    return { content: null, fixes: [] };
+  }
+  return { content: fixedText, fixes };
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +439,16 @@ export function scoreBrief(content) {
 
 export function cmdCheck(args) {
   const isJson = args.includes('--json');
+  const isFix = args.includes('--fix');
   const briefPath = args.find((a) => !a.startsWith('--')) ?? './brief.md';
+
+  if (isFix && briefPath === '-') {
+    const err = 'check --fix requires a file path: stdin cannot be rewritten in place';
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea check — FAIL\n  ${err}`);
+    return 1;
+  }
+
   let content;
 
   if (briefPath === '-') {
@@ -332,24 +472,41 @@ export function cmdCheck(args) {
     content = readFileSync(resolved, 'utf8');
   }
 
-  const result = validateBrief(content);
+  let result = validateBrief(content);
+  let appliedFixes = [];
+
+  // Mechanical repair pass: only on a failing brief, only shape-level fixes.
+  if (isFix && !result.ok) {
+    const fix = fixBrief(content);
+    if (fix.content !== null) {
+      const resolved = resolve(process.cwd(), briefPath);
+      writeFileSync(resolved, fix.content, 'utf8');
+      appliedFixes = fix.fixes;
+      result = validateBrief(fix.content);
+    }
+  }
 
   if (isJson) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, ...(isFix ? { appliedFixes } : {}) }, null, 2));
   } else {
     if (result.ok) {
       console.log(`Brainstorm2idea check — ${c.green('PASS')} (7/7)`);
-      for (const w of result.warnings) {
-        console.log(`  ${c.yellow('note:')} ${w}`);
-      }
     } else {
       console.log(`Brainstorm2idea check — ${c.red('FAIL')} (${result.passed}/7)`);
+    }
+    for (const f of appliedFixes.slice(0, 3)) {
+      console.log(`  ${c.cyan('fixed:')} ${f}`);
+    }
+    if (appliedFixes.length > 3) {
+      console.log(`  ${c.dim(`(+${appliedFixes.length - 3} more mechanical fixes applied)`)}`);
+    }
+    if (!result.ok) {
       for (const err of result.errors.slice(0, 3)) {
         console.log(`  ${c.red(err)}`);
       }
-      for (const w of result.warnings) {
-        console.log(`  ${c.yellow('note:')} ${w}`);
-      }
+    }
+    for (const w of result.warnings) {
+      console.log(`  ${c.yellow('note:')} ${w}`);
     }
   }
 
@@ -1956,7 +2113,7 @@ export function main(argv = process.argv.slice(2)) {
     case undefined:
       console.log(`brainstorm2idea v${VERSION} — turn fuzzy ideas into linted prototype briefs`);
       console.log(`\nUsage:`);
-      console.log(`  b2i check [brief] [--json]`);
+      console.log(`  b2i check [brief] [--fix] [--json]`);
       console.log(`  b2i score [brief] [--json]`);
       console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
       console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);

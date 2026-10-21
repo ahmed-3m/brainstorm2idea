@@ -12,8 +12,8 @@ Welcome to `brainstorm2idea` (`b2i`).
 ## Commands
 
 - Run tests: `npm test` (executes all 4 suites: `engine`, `consistency`, `stress`, `benchmarks`)
-- Run check on a brief: `node bin/b2i.mjs check [path|-]`
-- Run doability scorer: `node bin/b2i.mjs score [path|-]`
+- Run check on a brief: `node bin/b2i.mjs check [path|-] [--fix]` (`--fix` repairs mechanical issues: frontmatter quoting, missing schema, whitespace)
+- Run doability scorer: `node bin/b2i.mjs score [path|-] [--json]` (`--json` includes per-category sub-scores)
 - Run idea spark discovery: `node bin/b2i.mjs spark [category] [--seed <id>] [--output <path>]`
 - Scaffold a starter brief (TODO sections): `node bin/b2i.mjs init <name> [--template web|api|cli|worker|library|none] [--output <path>]`
 - De-noise a raw transcript into a draft brief: `node bin/b2i.mjs dump [file|-] [--output <path>]`

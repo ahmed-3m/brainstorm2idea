@@ -9,6 +9,7 @@ import {
   validateBrief,
   mergeSectionsIntoPrototype,
   scoreBrief,
+  fixBrief,
   RABBIT_HOLES,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
@@ -615,6 +616,212 @@ distilled: Store with payment processing
     assert.ok(parsed.score >= 0);
     assert.ok(parsed.breakdown);
     assert.equal(parsed.breakdown.rabbitHoles, 40);
+  });
+
+  test('scoreBrief --json exposes structured per-category sub-scores', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'rabbit-hole-brief.md'), '--json']);
+    const parsed = JSON.parse(res.stdout);
+    const { categories } = parsed;
+    assert.ok(categories, 'categories object present');
+    assert.equal(categories.scope.max, 30);
+    assert.equal(categories.scope.outOfScopeBullets, 2);
+    assert.equal(categories.rabbitHoles.max, 40);
+    assert.deepEqual(categories.rabbitHoles.mitigated, ['OAuth/SSO', 'Payment gateway']);
+    assert.deepEqual(categories.rabbitHoles.detected, []);
+    assert.equal(categories.alignment.max, 30);
+    assert.equal(typeof categories.alignment.risksTagged, 'boolean');
+    assert.equal(categories.alignment.templateMismatch, null);
+    // categories mirror breakdown — no drift between the two shapes
+    assert.equal(categories.scope.score, parsed.breakdown.scope);
+    assert.equal(categories.rabbitHoles.score, parsed.breakdown.rabbitHoles);
+    assert.equal(categories.alignment.score, parsed.breakdown.alignment);
+  });
+
+  test('scoreBrief categories report detected rabbit holes with fixes', () => {
+    const unmitigated = `---
+schema: b2i-brief@1
+template: web
+distilled: Shopping app with real-time Stripe checkout and OAuth SSO
+---
+# Dangerous App
+
+## Goal
+- Build checkout and auth
+
+## Core flows
+1. User logs in using oauth sso
+2. User pays with stripe checkout
+
+## Out of scope
+- Mobile apps
+`;
+    const result = scoreBrief(unmitigated);
+    const labels = result.categories.rabbitHoles.detected.map((d) => d.label);
+    assert.deepEqual(labels, ['OAuth/SSO', 'Payment gateway']);
+    assert.ok(result.categories.rabbitHoles.detected.every((d) => d.fix.length > 0));
+    assert.equal(result.categories.scope.outOfScopeBullets, 1);
+  });
+
+  test('scoreBrief INVALID result still carries a full categories shape', () => {
+    const result = scoreBrief('not a brief at all');
+    assert.equal(result.ok, false);
+    assert.equal(result.categories.scope.score, 0);
+    assert.deepEqual(result.categories.rabbitHoles.detected, []);
+    assert.deepEqual(result.categories.rabbitHoles.mitigated, []);
+    assert.equal(result.categories.alignment.templateMismatch, null);
+  });
+});
+
+describe('5b. Mechanical Auto-Fixer (fixBrief & check --fix)', () => {
+  test('fixBrief returns null content when nothing is broken', () => {
+    const clean = readFileSync(join(FIXTURES_DIR, 'valid-brief.md'), 'utf8');
+    const fix = fixBrief(clean);
+    assert.equal(fix.content, null);
+    assert.deepEqual(fix.fixes, []);
+  });
+
+  test('fixBrief re-quotes a distilled value that truncates on interior quotes', () => {
+    const broken = `---
+schema: b2i-brief@1
+template: web
+distilled: "Plant app "watering" tracker"
+---
+# Plant
+`;
+    const fix = fixBrief(broken);
+    assert.ok(fix.content.includes('distilled: "Plant app \'watering\' tracker"'));
+    const { meta } = parseFrontmatter(fix.content);
+    assert.equal(meta.distilled, "Plant app 'watering' tracker");
+  });
+
+  test('fixBrief quotes an unquoted value cut short by an inline # comment', () => {
+    const broken = `---
+schema: b2i-brief@1
+template: cli
+distilled: Track #plant watering dates
+---
+# Plant
+`;
+    const fix = fixBrief(broken);
+    const { meta } = parseFrontmatter(fix.content);
+    assert.equal(meta.distilled, 'Track #plant watering dates');
+  });
+
+  test('fixBrief heals missing and empty schema keys', () => {
+    const missing = fixBrief(`---\ntemplate: cli\ndistilled: "x"\n---\n# T\n`);
+    assert.ok(missing.content.includes('schema: b2i-brief@1'));
+    const emptied = fixBrief(`---\nschema:\ntemplate: cli\ndistilled: "x"\n---\n# T\n`);
+    assert.ok(emptied.content.includes('schema: b2i-brief@1'));
+    assert.ok(!emptied.content.includes('schema:\r\n'));
+    for (const f of [...missing.fixes, ...emptied.fixes]) {
+      assert.match(f, /^schema:/);
+    }
+  });
+
+  test('fixBrief normalizes whitespace but preserves CRLF line endings', () => {
+    const broken = '---\r\nschema: b2i-brief@1\r\ntemplate: cli\r\ndistilled: "x"\r\n---\r\n# T   \r\n\r\n\r\n';
+    const fix = fixBrief(broken);
+    assert.ok(fix.content.includes('\r\n'));
+    assert.ok(!/[ \t]\r?\n/.test(fix.content), 'no trailing spaces remain');
+    assert.ok(fix.content.endsWith('---\r\n# T\r\n'), 'trailing blank lines collapsed, single final newline');
+    assert.ok(fix.fixes.some((f) => f.startsWith('whitespace:')));
+  });
+
+  test('b2i check --fix repairs a broken brief in place and exits 0', () => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+    const target = join(TMP_DIR, 'brief.md');
+    writeFileSync(target, `---
+schema:
+template: web
+distilled: "Plant app "watering" tracker"
+---
+# PlantPulse   
+
+## Goal
+- Track watering dates   
+
+## Core flows
+1. Tap watered to reset the interval timer
+
+## Out of scope
+- Push notifications
+- User accounts and authentication
+`);
+
+    const before = runB2i(['check', target]);
+    assert.equal(before.code, 1);
+    const after = runB2i(['check', target, '--fix']);
+    assert.equal(after.code, 0, `should pass after fix:\n${after.all}`);
+    assert.match(after.stdout, /PASS \(7\/7\)/);
+    assert.ok((after.stdout.match(/fixed:/g) || []).length >= 2);
+
+    const fixed = readFileSync(target, 'utf8');
+    assert.ok(fixed.includes('schema: b2i-brief@1'));
+    assert.ok(fixed.includes("distilled: \"Plant app 'watering' tracker\""));
+
+    // Idempotent: a second --fix run on the healthy brief is a clean no-op.
+    const again = runB2i(['check', target, '--fix']);
+    assert.equal(again.code, 0);
+    assert.ok(!again.stdout.includes('fixed:'));
+    rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('b2i check --fix on a passing brief rewrites nothing', () => {
+    const target = join(FIXTURES_DIR, 'valid-brief.md');
+    const before = readFileSync(target, 'utf8');
+    const res = runB2i(['check', target, '--fix']);
+    assert.equal(res.code, 0);
+    assert.ok(!res.stdout.includes('fixed:'));
+    assert.equal(readFileSync(target, 'utf8'), before, 'fixture untouched');
+  });
+
+  test('b2i check --fix rejects stdin because there is no file to rewrite', () => {
+    const res = runB2i(['check', '-', '--fix'], {}, 'some brief');
+    assert.equal(res.code, 1);
+    assert.match(res.all, /--fix requires a file path/);
+  });
+
+  test('b2i check --fix --json reports appliedFixes and post-fix verdict', () => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+    const target = join(TMP_DIR, 'brief.md');
+    writeFileSync(target, `---
+schema:
+template: cli
+distilled: "d"
+---
+# T
+
+## Goal
+- G
+
+## Core flows
+1. F
+
+## Out of scope
+- A
+- B
+`);
+    const res = runB2i(['check', target, '--fix', '--json']);
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.ok(Array.isArray(parsed.appliedFixes) && parsed.appliedFixes.length >= 1);
+    rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('fixBrief never invents content: missing distilled stays missing', () => {
+    const broken = `---
+schema: b2i-brief@1
+template: cli
+---
+# T
+`;
+    const fix = fixBrief(broken);
+    const result = validateBrief(fix.content);
+    assert.equal(result.ok, false, 'distilled still missing after mechanical fix');
+    assert.ok(result.errors.some((e) => e.startsWith('distilled:')));
   });
 });
 

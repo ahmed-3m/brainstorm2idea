@@ -19,8 +19,8 @@ b2i <command>
 
 `<skill-base>` is this skill's directory. Commands:
 
-- `check [brief|-] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes)
-- `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0)
+- `check [brief|-] [--fix] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes); `--fix` rewrites mechanical issues in place (frontmatter value quoting, missing schema key, trailing whitespace — file paths only, never invents content)
+- `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0); `--json` includes structured per-category sub-scores (`categories.scope`, `categories.rabbitHoles`, `categories.alignment`) with the evidence behind each
 - `spark [category] [--seed <id>] [--output <path>] [--json]` — browse 24 curated prototype archetypes or seed a complete `brief.md` (devtools, productivity, local-ai, automation, cli, web)
 - `init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a starter `brief.md` with TODO sections (for humans working outside an agent; refuses to overwrite an existing brief)
 - `dump [file|-] [--output <path>] [--json]` — de-noise a raw voice transcript or rambling dump into a draft brief skeleton

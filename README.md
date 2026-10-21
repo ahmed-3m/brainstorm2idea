@@ -59,6 +59,7 @@ cat voice-memo.txt | npx @ahmed-3m/brainstorm2idea dump - --output ./brief.md
 
 # Lint and score a brief (file or stdin)
 npx @ahmed-3m/brainstorm2idea check
+npx @ahmed-3m/brainstorm2idea check --fix      # auto-repair quoting/schema/whitespace issues
 npx @ahmed-3m/brainstorm2idea score -
 
 # Browse the idea catalog, or seed a complete 100/100 brief to disk

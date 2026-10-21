@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- `b2i check [brief] --fix` — mechanical auto-repair for failing briefs, rewritten in place (file paths only): re-quotes frontmatter `schema`/`template`/`distilled` values that truncate on read-back (interior quotes, unquoted `#`), heals a missing/empty `schema:` key, and normalizes trailing whitespace/final newline while preserving CRLF. Never invents content; reports applied fixes (max 3 shown) and re-validates.
+- `b2i score --json` now includes a structured `categories` object — per-category sub-scores with maxima and the evidence behind each (`outOfScopeBullets`, detected rabbit holes with fixes, mitigated labels, `risksTagged`/`notesLean`/`templateMismatch`). The existing `breakdown` field is unchanged.
+- `fixBrief` engine export for programmatic consumers.
+
 ## [v0.4.1] — 2026-10-21
 
 ### Added

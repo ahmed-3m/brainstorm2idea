@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Six new `b2i spark` archetypes (24 → 30), covering the most requested starter shapes: `link-grabber` (browser extension), `csv-cleaner`, `flashcard-forge`, `discord-standup` (chat bot worker), `site-diff-scraper`, and `terminal-snake`. All pass `b2i check` 7/7 and score 100/100; the `b2i-brief@1` template set (`web|api|cli|worker|library|none`) is unchanged — it stays coupled to the `i2p new` contract.
 - `b2i check [brief] --fix` — mechanical auto-repair for failing briefs, rewritten in place (file paths only): re-quotes frontmatter `schema`/`template`/`distilled` values that truncate on read-back (interior quotes, unquoted `#`), heals a missing/empty `schema:` key, and normalizes trailing whitespace/final newline while preserving CRLF. Never invents content; reports applied fixes (max 3 shown) and re-validates.
 - `b2i score --json` now includes a structured `categories` object — per-category sub-scores with maxima and the evidence behind each (`outOfScopeBullets`, detected rabbit holes with fixes, mitigated labels, `risksTagged`/`notesLean`/`templateMismatch`). The existing `breakdown` field is unchanged.
 - `fixBrief` engine export for programmatic consumers.

@@ -697,6 +697,58 @@ export const SPARK_CATALOG = [
       'Fast sub-second scan across large documentation sets',
     ],
   },
+  {
+    id: 'link-grabber',
+    category: 'devtools',
+    template: 'web',
+    name: 'link-grabber',
+    distilled: 'Browser extension collecting visited pages into a staging list and copying them as markdown',
+    goals: [
+      'Collect the current page URL and title into a staging list',
+      'Copy the whole staged list as a markdown bullet block in one click',
+    ],
+    flows: [
+      'Show popup with an add-current-page button',
+      'Store staged links in browser local storage',
+      'Export the staged list as a markdown bullet block',
+    ],
+    outOfScope: [
+      'Accounts, cloud sync, or cross-device storage',
+      'Reading page content beyond title and URL',
+    ],
+    risks: [
+      'ASSUMPTION: Manifest V3 popup with storage permission is sufficient',
+    ],
+    notes: [
+      'Vanilla JS popup; no build step',
+    ],
+  },
+  {
+    id: 'csv-cleaner',
+    category: 'devtools',
+    template: 'cli',
+    name: 'csv-cleaner',
+    distilled: 'CLI that reports and fixes duplicate rows, blank lines, and ragged columns in CSV files',
+    goals: [
+      'Report duplicate rows, blank lines, and inconsistent column counts without mutating the file',
+      'Apply cleanup only with an explicit --write flag after previewing',
+    ],
+    flows: [
+      'Parse header and rows from an input CSV path or stdin',
+      'Detect duplicate rows and trailing whitespace per cell',
+      'Print a preview table, then rewrite the file only when --write is passed',
+    ],
+    outOfScope: [
+      'Spreadsheet (XLSX) or database import and export',
+      'Pivot tables, joins, or statistical analysis',
+    ],
+    risks: [
+      'ASSUMPTION: RFC-4180 quoted CSV fields cover the target files',
+    ],
+    notes: [
+      'Safe by default: read-only unless --write is passed',
+    ],
+  },
 
   // --- PRODUCTIVITY ---
   {
@@ -801,6 +853,32 @@ export const SPARK_CATALOG = [
     ],
     notes: [
       'Ultra-compact terminal aesthetic',
+    ],
+  },
+  {
+    id: 'flashcard-forge',
+    category: 'productivity',
+    template: 'web',
+    name: 'flashcard-forge',
+    distilled: 'Offline keyboard-first flashcard trainer with spaced-repetition scheduling in local storage',
+    goals: [
+      'Review decks with keyboard-only grading (know / do not know)',
+      'Schedule each card with a simple growing interval per success',
+    ],
+    flows: [
+      'Load a deck from an editable markdown list',
+      'Flip and grade cards using single-key shortcuts',
+      'Persist per-card interval and due date in local storage',
+    ],
+    outOfScope: [
+      'Accounts, cloud sync, or shared decks',
+      'Images, audio pronunciation, and rich card media',
+    ],
+    risks: [
+      'ASSUMPTION: Leitner-style intervals suffice; no SM-2 tuning for v0',
+    ],
+    notes: [
+      'Single-page vanilla JS app; runs from any static server',
     ],
   },
 
@@ -1013,6 +1091,61 @@ export const SPARK_CATALOG = [
       'Lightweight pure Node image metadata inspector',
     ],
   },
+  {
+    id: 'discord-standup',
+    category: 'automation',
+    template: 'worker',
+    name: 'discord-standup',
+    distilled: 'Long-running chat bot collecting daily standup replies in one channel and posting a grouped summary',
+    goals: [
+      'Collect standup answers posted in a configured channel before a cutoff time',
+      'Post a grouped per-user summary on a single command',
+    ],
+    flows: [
+      'Listen for reply messages in the configured channel',
+      'Store each user latest answers in a local JSON file',
+      'Post a formatted summary when the summarize command arrives',
+    ],
+    outOfScope: [
+      'Web dashboard or account linking',
+      'Voice, video call, and streaming features',
+      'Multi-server federation and moderation tooling',
+    ],
+    risks: [
+      'ASSUMPTION: A single bot token with read/send message intent suffices',
+    ],
+    notes: [
+      'Plain Node worker process; all state in one JSON file',
+    ],
+  },
+  {
+    id: 'site-diff-scraper',
+    category: 'automation',
+    template: 'cli',
+    name: 'site-diff-scraper',
+    distilled: 'Scheduled CLI fetcher that snapshots a list of pages and reports which ones changed',
+    goals: [
+      'Fetch each configured URL and hash its meaningful text',
+      'Diff against the previous snapshot and list changed pages',
+    ],
+    flows: [
+      'Read target URLs from a local list file',
+      'Fetch each page and strip markup down to comparable text',
+      'Store snapshots locally and print a changed or unchanged report',
+    ],
+    outOfScope: [
+      'JavaScript-rendered single-page apps and headless browser automation',
+      'Login-gated or paywalled content',
+      'Distributed crawling queues and rate-limit schedulers',
+    ],
+    risks: [
+      'ASSUMPTION: Target pages are static server-rendered markup',
+      'RISK: Target sites may change structure and break text extraction',
+    ],
+    notes: [
+      'Polite default: sequential fetches with a delay between requests',
+    ],
+  },
 
   // --- CLI ---
   {
@@ -1117,6 +1250,32 @@ export const SPARK_CATALOG = [
     ],
     notes: [
       'Dead simple friction-free note taking',
+    ],
+  },
+  {
+    id: 'terminal-snake',
+    category: 'cli',
+    template: 'cli',
+    name: 'terminal-snake',
+    distilled: 'Classic snake game rendering an animated grid in the terminal with score persistence and rising speed',
+    goals: [
+      'Render an animated snake grid with food and score in the terminal',
+      'Persist the high score between runs',
+    ],
+    flows: [
+      'Start a game loop reading one key at a time for direction',
+      'Advance the snake each tick, spawn food, detect wall and self collisions',
+      'Write the final score to a local file on game over',
+    ],
+    outOfScope: [
+      'Sound effects and color themes',
+      'Networked multiplayer or online leaderboards',
+    ],
+    risks: [
+      'ASSUMPTION: Terminal supports raw-mode key input and fast redraw',
+    ],
+    notes: [
+      'Pure Node: no curses bindings or native modules',
     ],
   },
 

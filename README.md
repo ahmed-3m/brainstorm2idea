@@ -44,7 +44,7 @@ Load the `brainstorm2idea` skill or run a slash command. The agent asks 3–5 ad
 |---|---|
 | A raw idea | `/b2i "<idea>"` — full Socratic dialogue |
 | A messy transcript | `/b2i-dump "<voice memo or chat dump>"` — fast de-noiser |
-| No idea yet | `/b2i-spark "developer tools"` — browse 24 curated archetypes |
+| No idea yet | `/b2i-spark "developer tools"` — browse 30 curated archetypes |
 | An approved brief | `/b2i-export --format prompt` — kickoff prompt, checklist, or PRD |
 
 ### As a standalone CLI
@@ -131,7 +131,7 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 ## Idea discovery (`b2i spark`)
 
-For blank-canvas paralysis: 24 curated prototype archetypes across 6 domains (`devtools`, `productivity`, `local-ai`, `automation`, `cli`, `web`). Every archetype passes `b2i check` 7/7 and scores 100/100 with rabbit holes pre-quarantined.
+For blank-canvas paralysis: 30 curated prototype archetypes across 6 domains (`devtools`, `productivity`, `local-ai`, `automation`, `cli`, `web`) — including frequently requested starters like a browser extension (`link-grabber`), a Discord standup bot (`discord-standup`), a CSV cleaner, a flashcard trainer, and a terminal game. Every archetype passes `b2i check` 7/7 and scores 100/100 with rabbit holes pre-quarantined.
 
 ## Benchmarks & dogfood
 

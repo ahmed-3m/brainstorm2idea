@@ -8,6 +8,10 @@
 - `b2i score --json` now includes a structured `categories` object — per-category sub-scores with maxima and the evidence behind each (`outOfScopeBullets`, detected rabbit holes with fixes, mitigated labels, `risksTagged`/`notesLean`/`templateMismatch`). The existing `breakdown` field is unchanged.
 - `fixBrief` engine export for programmatic consumers.
 - `i2p-contract` CI job: seeds a real brief and feeds `b2i handoff` output into the **published** `@ahmed-3m/idea2prototype@latest` on every push/PR plus a weekly schedule, so cross-repo interface drift fails CI instead of user terminals. Guarded by the consistency suite.
+- Issue templates (bug report, feature request, spark archetype proposal), a PR template carrying the zero-dependency checklist, and a `dependabot.yml` keeping the SHA-pinned GitHub Actions current.
+
+### Changed
+- The npmjs publish job now emits npm provenance attestations (`id-token: write` + `npm publish --provenance`), so releases from v0.4.2 onward carry the "Verified" provenance link on npmjs.org.
 
 ## [v0.4.1] — 2026-10-21
 

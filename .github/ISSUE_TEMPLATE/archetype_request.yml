@@ -1,0 +1,52 @@
+name: Spark archetype proposal
+description: Propose a new idea archetype for the `b2i spark` catalog
+labels: ["spark-archetype"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every spark archetype is a complete seed brief: it must pass `b2i check`
+        7/7, score 100/100, and stay template-compatible with the
+        `b2i-brief@1` contract. Propose the idea — the distilled one-liner
+        matters most; we'll shape the rest together.
+  - type: input
+    id: name
+    attributes:
+      label: Archetype name
+      description: kebab-case, verb- or noun-led, like `env-diff` or `csv-cleaner`
+      placeholder: rss-digest
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - devtools
+        - productivity
+        - local-ai
+        - automation
+        - cli
+        - web
+    validations:
+      required: true
+  - type: textarea
+    id: distilled
+    attributes:
+      label: The distilled one-liner
+      description: One sentence a stranger can act on — this becomes the brief's `distilled` frontmatter.
+      placeholder: Pull yesterday's items from my RSS subscriptions into a single morning digest page.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's a good first prototype
+      description: Small blast radius, obvious success state, no auth/payments — what makes it finishable in a weekend?
+    validations:
+      required: true
+  - type: input
+    id: closest
+    attributes:
+      label: Closest existing archetype
+      description: Optional — run `b2i spark <category>` to browse the current catalog.

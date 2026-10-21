@@ -47,6 +47,9 @@ jobs:
 
   npmjs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # npm provenance attestations
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -76,4 +79,4 @@ jobs:
             echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish (manual dispatch)"
             exit 0
           fi
-          npm publish --access public
+          npm publish --access public --provenance

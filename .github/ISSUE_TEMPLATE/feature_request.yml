@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new capability for the b2i CLI or skill
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `b2i` is deliberately small: a single zero-dependency engine, the
+        `b2i-brief@1` contract, and a deterministic handoff. Features that keep
+        those properties are welcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that b2i currently makes hard or impossible?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: The command, flag, or behavior you'd want. A sketch of the expected terminal output helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "I tried it with the current commands and here's where it broke."
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Fit check
+      options:
+        - label: It can ship with Node.js >= 18.17 built-ins only — no new npm dependencies.
+          required: true

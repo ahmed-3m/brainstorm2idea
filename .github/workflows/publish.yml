@@ -1,6 +1,11 @@
-# Publishes the package to GitHub Packages and npmjs whenever a release is published:
-#  - GitHub Packages (npm.pkg.github.com) — GITHUB_TOKEN auth with packages: write
-#  - npmjs.org — NPM_TOKEN secret (skips cleanly with warning if not yet configured)
+# Publishes the package to two npm registries whenever a release is published:
+#  - GitHub Packages (npm.pkg.github.com) — GITHUB_TOKEN auth, always runs
+#  - npmjs.org — NPM_TOKEN secret; npmjs is the documented PRIMARY channel, so
+#    a release without the secret fails loudly (a mirror-only release would
+#    silently invert the README's install claims). Manual workflow_dispatch
+#    without the secret still skips with a visible warning — it is a deliberate
+#    operator re-publish action, not a release. Both channels carry the scoped
+#    name @ahmed-3m/brainstorm2idea (GitHub Packages hosts scoped names only).
 name: publish
 
 on:
@@ -14,6 +19,7 @@ permissions:
 jobs:
   github-packages:
     runs-on: ubuntu-latest
+    if: github.event_name == 'release'   # re-dispatch targets npmjs only; this job would 409
     permissions:
       contents: read
       packages: write
@@ -25,7 +31,16 @@ jobs:
           node-version: 22
           registry-url: https://npm.pkg.github.com
 
-      - name: Publish to GitHub Packages
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Publish
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,12 +55,25 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: Guard - ref must match package.json version
+        # unconditional: workflow_dispatch must target the release tag, never a branch
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "v$PKG" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $PKG"
+            exit 1
+          fi
+
       - name: Publish to npmjs.org
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish"
+            if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+              echo "::error::NPM_TOKEN not configured - npmjs is the documented primary channel, refusing to publish this release mirror-only"
+              exit 1
+            fi
+            echo "::warning::NPM_TOKEN secret not configured - skipping npmjs publish (manual dispatch)"
             exit 0
           fi
           npm publish --access public

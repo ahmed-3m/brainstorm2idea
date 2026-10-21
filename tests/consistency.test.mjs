@@ -94,4 +94,67 @@ describe('Consistency Guards', () => {
       assert.match(res.stdout, new RegExp(`b2i ${cmd}\\b`), `help output lists "${cmd}"`);
     }
   });
+
+  test('the publish workflow fails loudly instead of silently skipping npmjs', () => {
+    // Regression guard: an earlier publish.yml skipped the npmjs job with
+    // `exit 0` when NPM_TOKEN was missing. Every release run went green while
+    // nothing reached npmjs.org, so `npx @ahmed-3m/brainstorm2idea` 404'd.
+    const publish = readFileSync(resolve('.github/workflows/publish.yml'), 'utf8');
+
+    assert.ok(
+      publish.includes('::error::NPM_TOKEN not configured'),
+      'publish.yml must error when NPM_TOKEN is missing on a release'
+    );
+
+    // The release branch must bail out with a non-zero code BEFORE the
+    // manual-dispatch warning path can be reached.
+    const errorIdx = publish.indexOf('::error::NPM_TOKEN not configured');
+    const failIdx = publish.indexOf('exit 1', errorIdx);
+    const warnIdx = publish.indexOf('::warning::NPM_TOKEN secret not configured');
+    const skipIdx = publish.indexOf('exit 0', warnIdx);
+
+    assert.ok(errorIdx >= 0, 'the release error branch exists');
+    assert.ok(failIdx > errorIdx, 'the release error branch exits non-zero');
+    assert.ok(warnIdx > failIdx, 'the warning path comes after the release bail-out');
+    assert.ok(skipIdx > warnIdx, 'the warning path exits zero only for manual dispatch');
+
+    // And the release bail-out must be conditioned on a release event.
+    assert.match(
+      publish,
+      /GITHUB_EVENT_NAME"?\s*"?\]?[^]*?=.*release[^]*?::error::NPM_TOKEN not configured/s,
+      'the missing-token error must be gated on a release event'
+    );
+  });
+
+  test('the publish workflow guards the tag against the package.json version', () => {
+    const publish = readFileSync(resolve('.github/workflows/publish.yml'), 'utf8');
+    assert.match(
+      publish,
+      /does not match package\.json version/,
+      'publish.yml must verify the release tag matches package.json version'
+    );
+  });
+
+  test('the CI workflow smoke-tests the packed tarball', () => {
+    // A missing entry in package.json "files" breaks `npx` without breaking
+    // any in-repo test, so the packed artifact needs its own check.
+    const ci = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8');
+    assert.match(ci, /package-smoke:/, 'ci.yml defines a package-smoke job');
+    assert.match(ci, /npm pack/, 'the smoke job packs the tarball');
+    assert.match(ci, /npm install/, 'the smoke job installs the packed tarball');
+    assert.match(ci, /parser\.mjs/, 'the smoke job asserts parser.mjs ships in the tarball');
+  });
+
+  test('package.json ships every file the engine needs at runtime', () => {
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+    const files = pkg.files;
+    assert.ok(files.includes('bin/'), 'bin/ is published');
+    assert.ok(
+      files.includes('skills/brainstorm2idea/scripts/'),
+      'skills/brainstorm2idea/scripts/ is published (engine + parser module)'
+    );
+    assert.ok(files.includes('skills/brainstorm2idea/SKILL.md'), 'SKILL.md is published');
+    assert.ok(files.includes('agents/'), 'agents/ is published');
+    assert.ok(files.includes('commands/'), 'commands/ is published');
+  });
 });

@@ -27,3 +27,60 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Engine tests + consistency checks + benchmarks
         run: npm test
+
+  package-smoke:
+    # Verifies the published tarball is actually installable and runnable.
+    # A missing entry in package.json "files" breaks `npx @ahmed-3m/brainstorm2idea`
+    # without breaking any in-repo test, so it needs its own check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Pack the tarball
+        id: pack
+        run: echo "tarball=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Install the packed tarball
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke"
+          npm install "$RUNNER_TEMP/${{ steps.pack.outputs.tarball }}"
+
+      - name: Run the installed binary
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          BIN="node_modules/@ahmed-3m/brainstorm2idea/bin/b2i.mjs"
+          test -f "$BIN"
+          test "$(node "$BIN" --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
+          node "$BIN" list
+
+      - name: Lint a brief through the installed binary
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          printf '%s\n' \
+            '---' \
+            'schema: b2i-brief@1' \
+            'template: cli' \
+            'distilled: Smoke test brief from the packed tarball' \
+            '---' \
+            '# Smoke' \
+            '' \
+            '## Goal' \
+            '- Verify the tarball ships a working engine' \
+            '' \
+            '## Core flows' \
+            '1. Run b2i check from the packed tarball' \
+            '' \
+            '## Out of scope' \
+            '- Nothing' \
+            | node node_modules/@ahmed-3m/brainstorm2idea/bin/b2i.mjs check -
+
+      - name: Verify the tarball ships the parser module
+        # brainstorm2idea.mjs imports ./parser.mjs relatively — a missing file
+        # in the "files" array would break the engine at import time.
+        run: |
+          test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/parser.mjs"
+          test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/SKILL.md"

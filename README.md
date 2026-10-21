@@ -137,7 +137,20 @@ For blank-canvas paralysis: 30 curated prototype archetypes across 6 domains (`d
 
 ## Benchmarks & dogfood
 
-- [benchmarks/specs.md](benchmarks/specs.md) — 5 canonical ideation scenarios (rambling voice memo, Frankenstein SaaS, infra rabbit hole…) with evaluation rubrics, run by `tests/benchmarks.test.mjs`.
+The [pre-registered suite](benchmarks/specs.md) defines 5 canonical ideation scenarios (rambling voice memo, Frankenstein SaaS, infra rabbit hole, library utility, non-software idea) with a fixed evaluation rubric. `tests/benchmarks.test.mjs` executes them on every CI run (Node 18/22/24, Linux + Windows); the full suite finishes in a few seconds.
+
+Results against the rubric's ideal target briefs (engine-measured, `v0.4.x`):
+
+| # | Scenario | Challenge | Template | `b2i check` | `b2i score` | Rabbit holes quarantined |
+|---|---|---|---|---|---|---|
+| 1 | PlantPulse | Rambling voice memo → de-noised brief | `web` | 7/7 | **100/100 A** | 2 (auth, payments), 0 leaked |
+| 2 | PawsOnDemand | Frankenstein SaaS → scope-cut | `web` | 7/7 | **100/100 A** | 2 (payments, native app), 0 leaked |
+| 3 | CollabMark | Distributed-infra rabbit hole → simplicity | `web` | 7/7 | **100/100 A** | 2 (OAuth/SSO, distributed infra), 0 leaked |
+| 4 | kv-log-parse | Zero-dep library utility | `library` | 7/7 | **100/100 A** | 0 (none present) |
+| 5 | Kreuzberg Book Swap Cafe | Non-software honesty check | `none` | 7/7 | **100/100 A** | 1 (payments), 0 leaked |
+
+Every scenario also satisfies the rubric's scope-discipline limits: 2 goals, 3 flows, 3–5 explicit non-goals, and honest `template: none` classification for the non-software case.
+
 - [dogfood/chunk-summarizer](dogfood/chunk-summarizer) — a real library prototyped end-to-end using `b2i export` + raw handoff.
 
 ## License

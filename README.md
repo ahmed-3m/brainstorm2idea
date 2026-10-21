@@ -153,6 +153,12 @@ Every scenario also satisfies the rubric's scope-discipline limits: 2 goals, 3 f
 
 - [dogfood/chunk-summarizer](dogfood/chunk-summarizer) — a real library prototyped end-to-end using `b2i export` + raw handoff.
 
+## Community
+
+- [Contributing](CONTRIBUTING.md) — zero-setup dev environment (no `npm install` — really), architecture map, and the non-negotiable constraints.
+- [Discussions](https://github.com/ahmed-3m/brainstorm2idea/discussions) — ideas, questions, and show-and-tell.
+- [Issues](https://github.com/ahmed-3m/brainstorm2idea/issues) — bugs; grab something labeled [`good first issue`](https://github.com/ahmed-3m/brainstorm2idea/labels/good%20first%20issue).
+
 ## License
 
 MIT © The Brainstorm2Idea Authors

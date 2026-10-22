@@ -86,6 +86,20 @@ describe('Consistency Guards', () => {
     assert.ok(VALID_TEMPLATES.includes('none'), 'VALID_TEMPLATES contains "none"');
   });
 
+  test('the engine module split ships and the engine re-exports it', async () => {
+    // sparks.mjs + constants.mjs are separate modules since the v0.5 split; the
+    // engine must keep re-exporting every moved name so existing deep-import
+    // consumers (including our own tests) see one unchanged surface.
+    const engine = await import('../skills/brainstorm2idea/scripts/brainstorm2idea.mjs');
+    assert.ok(existsSync(resolve('skills/brainstorm2idea/scripts/sparks.mjs')), 'sparks.mjs exists');
+    assert.ok(existsSync(resolve('skills/brainstorm2idea/scripts/constants.mjs')), 'constants.mjs exists');
+    assert.ok(Array.isArray(engine.SPARK_CATALOG) && engine.SPARK_CATALOG.length >= 30, 'engine re-exports SPARK_CATALOG');
+    assert.ok(Array.isArray(engine.SPARK_CATEGORIES), 'engine re-exports SPARK_CATEGORIES');
+    assert.equal(typeof engine.generateBriefFromSpark, 'function', 'engine re-exports generateBriefFromSpark');
+    assert.equal(engine.SCHEMA_VERSION, SCHEMA_VERSION, 'engine re-exports SCHEMA_VERSION');
+    assert.deepEqual(engine.VALID_TEMPLATES, VALID_TEMPLATES, 'engine re-exports VALID_TEMPLATES');
+  });
+
   test('all command files exist and are well-formed', () => {
     const cmds = ['b2i.md', 'b2i-dump.md', 'b2i-spark.md', 'b2i-export.md'];
     for (const cmdFile of cmds) {

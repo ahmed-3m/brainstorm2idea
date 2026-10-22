@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Engine module split: the spark catalog (`SPARK_CATEGORIES`, `SPARK_CATALOG`, `generateBriefFromSpark`) now lives in `skills/brainstorm2idea/scripts/sparks.mjs` and the shared schema/template constants in `scripts/constants.mjs`; the engine imports and re-exports both, so every deep-import consumer sees the identical export surface. The tarball smoke test asserts the new modules ship in the published package.
+
 ## [v0.4.3] — 2026-10-22
 
 ### Added

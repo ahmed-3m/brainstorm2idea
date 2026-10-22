@@ -89,11 +89,14 @@ jobs:
             '- Nothing' \
             | node node_modules/@ahmed-3m/brainstorm2idea/bin/b2i.mjs check -
 
-      - name: Verify the tarball ships the parser module
-        # brainstorm2idea.mjs imports ./parser.mjs relatively — a missing file
-        # in the "files" array would break the engine at import time.
+      - name: Verify the tarball ships the engine's sibling modules
+        # brainstorm2idea.mjs imports ./parser.mjs, ./sparks.mjs and
+        # ./constants.mjs relatively — a missing file in the "files" array
+        # would break the engine at import time.
         run: |
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/parser.mjs"
+          test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/sparks.mjs"
+          test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/constants.mjs"
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/SKILL.md"
 
   i2p-contract:

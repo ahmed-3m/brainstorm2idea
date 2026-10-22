@@ -49,7 +49,7 @@ export const RABBIT_HOLES = [
 // 7 Hard Checks Validator
 // ---------------------------------------------------------------------------
 
-export function validateBrief(content) {
+export function validateBrief(content, options = {}) {
   const errors = [];
   const warnings = [];
 
@@ -82,10 +82,11 @@ export function validateBrief(content) {
   }
 
   // 3. template
+  const allowedTemplates = options?.templates ? options.templates : VALID_TEMPLATES;
   if (!meta.template) {
-    errors.push(`template: missing template (must be one of: ${VALID_TEMPLATES.join(', ')})`);
-  } else if (!VALID_TEMPLATES.includes(meta.template.toLowerCase())) {
-    errors.push(`template: invalid "${meta.template}" (must be one of: ${VALID_TEMPLATES.join(', ')})`);
+    errors.push(`template: missing template (must be one of: ${allowedTemplates.join(', ')})`);
+  } else if (!allowedTemplates.includes(meta.template.toLowerCase())) {
+    errors.push(`template: invalid "${meta.template}" (must be one of: ${allowedTemplates.join(', ')})`);
   }
 
   // 4. goal (1-3 bullets)
@@ -810,6 +811,101 @@ export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   return text.trimEnd() + '\n';
 }
 
+/**
+ * Resolve the i2p invocation command and arguments (without subcommand).
+ * Returns null if B2I_HANDOFF_CMD is set (do not introspect).
+ * @param {string|null} i2pOverride
+ * @returns {{ cmd: string, cmdArgs: string[] } | null}
+ */
+export function resolveI2pInvocation(i2pOverride) {
+  if (process.env.B2I_HANDOFF_CMD) {
+    return null;
+  }
+  if (i2pOverride) {
+    if (i2pOverride.endsWith('.mjs') || i2pOverride.endsWith('.js')) {
+      return { cmd: process.execPath, cmdArgs: [resolve(process.cwd(), i2pOverride)] };
+    }
+    return { cmd: i2pOverride, cmdArgs: [] };
+  }
+  if (process.platform === 'win32') {
+    const npxCli = join(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
+    if (existsSync(npxCli)) {
+      return { cmd: process.execPath, cmdArgs: [npxCli, '-y', '@ahmed-3m/idea2prototype@latest'] };
+    }
+  }
+  return { cmd: 'npx', cmdArgs: ['-y', '@ahmed-3m/idea2prototype@latest'] };
+}
+
+/**
+ * Introspect idea2prototype templates from a live i2p invocation.
+ * Queries `<invocation> list --json`. Never throws and never prints.
+ * @param {{ cmd: string, cmdArgs: string[] } | null} i2pInvocation
+ * @returns {{ source: 'live', templates: string[] } | { source: 'pinned', reason: 'offline'|'non-zero'|'invalid-json'|'timeout'|'custom-command', templates: string[] }}
+ */
+export function introspectI2pTemplates(i2pInvocation) {
+  const pinnedTemplates = VALID_TEMPLATES.filter((t) => t !== 'none');
+
+  if (!i2pInvocation || !i2pInvocation.cmd) {
+    return { source: 'pinned', reason: 'custom-command', templates: pinnedTemplates };
+  }
+
+  try {
+    const { cmd, cmdArgs = [] } = i2pInvocation;
+    const fullArgs = [...cmdArgs, 'list', '--json'];
+
+    // B2I_INTROSPECT_TIMEOUT_MS: test-only knob for introspection timeout (default: 15000ms)
+    const timeoutEnv = process.env.B2I_INTROSPECT_TIMEOUT_MS;
+    const timeout = (timeoutEnv !== undefined && Number.isFinite(Number(timeoutEnv)))
+      ? Math.max(1, Number(timeoutEnv))
+      : 15000;
+
+    const useShell = process.platform === 'win32' && (cmd === 'npx' || /\.(cmd|bat)$/i.test(cmd));
+    const spawnOpts = { encoding: 'utf8', timeout };
+
+    const spawnRes = useShell
+      ? spawnSync([quoteCmdCommand(cmd), ...fullArgs.map(quoteCmdArg)].join(' '), { ...spawnOpts, shell: true })
+      : spawnSync(cmd, fullArgs, spawnOpts);
+
+    // On Windows a spawnSync timeout kills the child without setting
+    // error.code ETIMEDOUT — it leaves status null and a signal instead.
+    if (spawnRes.error?.code === 'ETIMEDOUT' || (spawnOpts.timeout > 0 && spawnRes.status === null && spawnRes.signal)) {
+      return { source: 'pinned', reason: 'timeout', templates: pinnedTemplates };
+    }
+
+    const combinedStderr = (spawnRes.stderr || spawnRes.stdout || spawnRes.error?.message || '').trim();
+    const isOffline = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ERR_INTERNET_DISCONNECTED|FetchError/i.test(combinedStderr) || spawnRes.error?.code === 'ENOENT';
+    if (isOffline) {
+      return { source: 'pinned', reason: 'offline', templates: pinnedTemplates };
+    }
+
+    if (spawnRes.status !== 0 || spawnRes.error) {
+      return { source: 'pinned', reason: 'non-zero', templates: pinnedTemplates };
+    }
+
+    let data;
+    try {
+      data = JSON.parse(spawnRes.stdout);
+    } catch {
+      return { source: 'pinned', reason: 'invalid-json', templates: pinnedTemplates };
+    }
+
+    if (
+      data &&
+      typeof data === 'object' &&
+      data.ok === true &&
+      Array.isArray(data.templates) &&
+      data.templates.length > 0 &&
+      data.templates.every((t) => typeof t === 'string' && t.trim().length > 0)
+    ) {
+      return { source: 'live', templates: data.templates.map((t) => t.trim()) };
+    }
+
+    return { source: 'pinned', reason: 'invalid-json', templates: pinnedTemplates };
+  } catch {
+    return { source: 'pinned', reason: 'offline', templates: pinnedTemplates };
+  }
+}
+
 export function cmdHandoff(args) {
   const isJson = args.includes('--json');
   const isDryRun = args.includes('--dry-run');
@@ -873,7 +969,38 @@ export function cmdHandoff(args) {
   }
 
   const briefContent = readFileSync(resolvedBrief, 'utf8');
-  const briefResult = validateBrief(briefContent);
+
+  // Introspection (computed before pre-flight verdict is finalized, but after brief is loaded)
+  const pinnedI2pTemplates = VALID_TEMPLATES.filter((t) => t !== 'none');
+  let introspection;
+  let i2pInvocation = null;
+  if (targetMode === 'raw') {
+    introspection = { source: 'pinned', reason: 'not-appplied', templates: pinnedI2pTemplates };
+  } else {
+    i2pInvocation = resolveI2pInvocation(i2pOverride);
+    introspection = introspectI2pTemplates(i2pInvocation);
+  }
+
+  let briefResult = validateBrief(briefContent);
+  let liveTemplateAcceptedNote = null;
+
+  // Two-step template validation:
+  // If pinned validation failed, but every error is a template-enum error,
+  // introspection is live, and the brief's template is in the live set:
+  // re-validate with live templates.
+  if (!briefResult.ok && targetMode === 'i2p' && introspection.source === 'live') {
+    const isTemplateEnumError = (e) => e.startsWith('template: invalid');
+    if (briefResult.errors.length > 0 && briefResult.errors.every(isTemplateEnumError)) {
+      if (introspection.templates.includes(briefResult.meta.template)) {
+        const liveAllowed = Array.from(new Set([...introspection.templates, 'none']));
+        const liveRecheck = validateBrief(briefContent, { templates: liveAllowed });
+        if (liveRecheck.ok) {
+          briefResult = liveRecheck;
+          liveTemplateAcceptedNote = 'template accepted via live i2p introspection — `b2i check` pins the shipped set until b2i is updated';
+        }
+      }
+    }
+  }
 
   // Pre-flight check: must pass 7/7
   if (!briefResult.ok) {
@@ -885,6 +1012,17 @@ export function cmdHandoff(args) {
       console.error('Handoff aborted: fix brief before scaffolding.');
     }
     return 1;
+  }
+
+  // If pinned validation passed, but introspection is live and template is NOT in the live set:
+  // fail early with an actionable error naming the live templates (exit 1).
+  if (targetMode === 'i2p' && briefResult.meta.template !== 'none') {
+    if (introspection.source === 'live' && !introspection.templates.includes(briefResult.meta.template)) {
+      const err = `template "${briefResult.meta.template}" is not supported by the live idea2prototype generator (available: ${introspection.templates.join(', ')})`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+      else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
+      return 1;
+    }
   }
 
   // Brief-only mode
@@ -928,10 +1066,18 @@ export function cmdHandoff(args) {
 
     if (isDryRun) {
       if (isJson) {
-        console.log(JSON.stringify({ ok: true, dryRun: true, target: 'raw', dir, prototypePreview: content }, null, 2));
+        console.log(JSON.stringify({
+          ok: true,
+          dryRun: true,
+          target: 'raw',
+          dir,
+          prototypePreview: content,
+          introspection: { source: 'pinned', reason: 'not-appplied', templates: pinnedI2pTemplates },
+        }, null, 2));
       } else {
         console.log('Brainstorm2idea handoff — DRY RUN (raw target)');
         console.log(`  target dir: ${dir}`);
+        console.log(`  templates: pinned fallback (not-appplied)`);
         console.log('\nPreview of PROTOTYPE.md:\n' + '-'.repeat(40) + '\n' + content + '-'.repeat(40));
       }
       return 0;
@@ -955,7 +1101,16 @@ export function cmdHandoff(args) {
     }
 
     if (isJson) {
-      console.log(JSON.stringify({ ok: true, status: 'scaffolded', target: 'raw', dir, template, name, prototype: targetPrototype }, null, 2));
+      console.log(JSON.stringify({
+        ok: true,
+        status: 'scaffolded',
+        target: 'raw',
+        dir,
+        template,
+        name,
+        prototype: targetPrototype,
+        introspection: { source: 'pinned', reason: 'not-appplied', templates: pinnedI2pTemplates },
+      }, null, 2));
     } else {
       console.log('Brainstorm2idea handoff — SUCCESS (raw target)');
       console.log(`  project: ${dir} (${template} template)`);
@@ -975,34 +1130,20 @@ export function cmdHandoff(args) {
   const i2pName = toI2pArg(name);
   const i2pIdea = toI2pArg(distilled);
 
-  if (i2pOverride) {
-    if (i2pOverride.endsWith('.mjs') || i2pOverride.endsWith('.js')) {
-      cmd = process.execPath;
-      cmdArgs = [resolve(process.cwd(), i2pOverride), 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-    } else {
-      cmd = i2pOverride;
-      cmdArgs = ['new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-    }
-  } else if (process.env.B2I_HANDOFF_CMD) {
+  if (process.env.B2I_HANDOFF_CMD) {
     const parts = process.env.B2I_HANDOFF_CMD.split(' ');
     cmd = parts[0];
     cmdArgs = [...parts.slice(1), dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-  } else {
-    // Default: npx -y @ahmed-3m/idea2prototype@latest new ...
-    if (process.platform === 'win32') {
-      const npxCli = join(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
-      if (existsSync(npxCli)) {
-        cmd = process.execPath;
-        cmdArgs = [npxCli, '-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-      } else {
-        cmd = 'npx';
-        cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-      }
-    } else {
-      cmd = 'npx';
-      cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
-    }
+  } else if (i2pInvocation) {
+    cmd = i2pInvocation.cmd;
+    cmdArgs = [...i2pInvocation.cmdArgs, 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
   }
+
+  const introspectionPayload = {
+    source: introspection.source,
+    templates: introspection.templates,
+    ...(introspection.reason ? { reason: introspection.reason } : {}),
+  };
 
   // Dry-run mode for i2p
   if (isDryRun) {
@@ -1011,10 +1152,29 @@ export function cmdHandoff(args) {
     const mergedPreview = mergeSectionsIntoPrototype(syntheticPrototype, briefResult);
 
     if (isJson) {
-      console.log(JSON.stringify({ ok: true, dryRun: true, target: 'i2p', command: [cmd, ...cmdArgs], prototypePreview: mergedPreview }, null, 2));
+      const dryRunJson = {
+        ok: true,
+        dryRun: true,
+        target: 'i2p',
+        command: [cmd, ...cmdArgs],
+        prototypePreview: mergedPreview,
+        introspection: introspectionPayload,
+      };
+      if (liveTemplateAcceptedNote) {
+        dryRunJson.note = liveTemplateAcceptedNote;
+      }
+      console.log(JSON.stringify(dryRunJson, null, 2));
     } else {
       console.log('Brainstorm2idea handoff — DRY RUN');
       console.log(`  command: ${cmd} ${cmdArgs.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}`);
+      if (introspection.source === 'live') {
+        console.log(`  templates: live (${introspection.templates.join(', ')})`);
+      } else {
+        console.log(`  templates: pinned fallback (${introspection.reason})`);
+      }
+      if (liveTemplateAcceptedNote) {
+        console.log(`  note:    ${liveTemplateAcceptedNote}`);
+      }
       console.log('\nPreview of merged PROTOTYPE.md:\n' + '-'.repeat(40) + '\n' + mergedPreview + '-'.repeat(40));
     }
     return 0;
@@ -1076,10 +1236,26 @@ export function cmdHandoff(args) {
   }
 
   if (isJson) {
-    console.log(JSON.stringify({ ok: true, status: 'scaffolded', target: 'i2p', dir, template, name, prototype: targetPrototype }, null, 2));
+    const successPayload = {
+      ok: true,
+      status: 'scaffolded',
+      target: 'i2p',
+      dir,
+      template,
+      name,
+      prototype: targetPrototype,
+      introspection: introspectionPayload,
+    };
+    if (liveTemplateAcceptedNote) {
+      successPayload.note = liveTemplateAcceptedNote;
+    }
+    console.log(JSON.stringify(successPayload, null, 2));
   } else {
     console.log(`Brainstorm2idea handoff — SUCCESS`);
     console.log(`  project: ${dir} (${template} template)`);
+    if (liveTemplateAcceptedNote) {
+      console.log(`  note:    ${liveTemplateAcceptedNote}`);
+    }
     console.log(`  brief:   merged into ${dir}/PROTOTYPE.md (source brief moved)`);
     console.log(`\nNext steps:`);
     console.log(`  cd ${dir}`);

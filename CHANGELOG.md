@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Live idea2prototype template introspection in `b2i handoff`: queries `i2p list --json` before scaffolding to accept newly released templates without engine upgrades, while gracefully falling back to the pinned template set offline or on custom commands (`B2I_INTROSPECT_TIMEOUT_MS` knob for testing).
+
 ### Changed
 - Engine module split: the spark catalog (`SPARK_CATEGORIES`, `SPARK_CATALOG`, `generateBriefFromSpark`) now lives in `skills/brainstorm2idea/scripts/sparks.mjs` and the shared schema/template constants in `scripts/constants.mjs`; the engine imports and re-exports both, so every deep-import consumer sees the identical export surface. The tarball smoke test asserts the new modules ship in the published package.
 

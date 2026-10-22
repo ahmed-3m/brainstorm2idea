@@ -5,7 +5,38 @@ import { resolve, join, basename } from 'node:path';
 const args = process.argv.slice(2);
 const command = args[0];
 
-if (process.env.MOCK_FAIL_NEW === '1') {
+if (command === 'list') {
+  if (process.env.MOCK_I2P_MODE === 'garbage') {
+    console.log('THIS IS NOT JSON GARBAGE');
+    process.exit(0);
+  }
+  if (process.env.MOCK_I2P_MODE === 'fail') {
+    console.error('mock error: simulated list failure');
+    process.exit(1);
+  }
+  if (process.env.MOCK_I2P_MODE === 'hang') {
+    // Block the main thread until the caller's introspection timeout kills
+    // us — never fall through into the `new` scaffold below. (Scheduling a
+    // timer is not enough: it keeps the loop alive but does not stop the
+    // current turn of execution; a never-settling top-level await makes Node
+    // exit 13 the moment the loop empties.)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120000);
+    process.exit(0);
+  } else {
+    const defaultTemplates = ['web', 'api', 'cli', 'worker', 'library'];
+    const templates = process.env.MOCK_I2P_TEMPLATES
+      ? process.env.MOCK_I2P_TEMPLATES.split(',').map((s) => s.trim()).filter(Boolean)
+      : defaultTemplates;
+
+    console.log(JSON.stringify({
+      ok: true,
+      version: 'mock',
+      templates,
+      features: ['templates', 'flags'],
+    }, null, 2));
+    process.exit(0);
+  }
+} else if (process.env.MOCK_FAIL_NEW === '1') {
   console.error('mock error: failed to create prototype');
   process.exit(1);
 }

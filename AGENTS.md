@@ -19,4 +19,4 @@ Welcome to `brainstorm2idea` (`b2i`).
 - De-noise a raw transcript into a draft brief: `node bin/b2i.mjs dump [file|-] [--output <path>] [--force]`
 - Run export to prompt/issues/prd/json: `node bin/b2i.mjs export [path|-] [--format prompt|issues|prd|json] [--output <path>]`
 - Run list: `node bin/b2i.mjs list`
-- Run handoff: `node bin/b2i.mjs handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run]`
+- Run handoff: `node bin/b2i.mjs handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run]` (i2p target validates the template against the live i2p template set when reachable, falling back to the shipped set offline)

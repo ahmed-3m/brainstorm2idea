@@ -10,6 +10,7 @@ import {
   mergeSectionsIntoPrototype,
   scoreBrief,
   fixBrief,
+  introspectI2pTemplates,
   RABBIT_HOLES,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
@@ -379,6 +380,169 @@ distilled: "CLI 'tool': test $VAR & pipe | redirect"
     assert.equal(parsed.ok, true);
     assert.equal(parsed.target, 'raw');
     assert.equal(parsed.status, 'scaffolded');
+  });
+
+  test('introspectI2pTemplates engine function unit tests', () => {
+    const custom = introspectI2pTemplates(null);
+    assert.equal(custom.source, 'pinned');
+    assert.equal(custom.reason, 'custom-command');
+    assert.deepEqual(custom.templates, ['web', 'api', 'cli', 'worker', 'library']);
+
+    const live = introspectI2pTemplates({ cmd: process.execPath, cmdArgs: [MOCK_I2P] });
+    assert.equal(live.source, 'live');
+    assert.deepEqual(live.templates, ['web', 'api', 'cli', 'worker', 'library']);
+  });
+
+  test('introspectI2pTemplates live hit: mock lists templates, handoff succeeds with live source', () => {
+    const targetDir = join(TMP_DIR, 'live-hit-app');
+    const tempBrief = join(TMP_DIR, 'live-hit-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json']);
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'live');
+    assert.deepEqual(parsed.introspection.templates, ['web', 'api', 'cli', 'worker', 'library']);
+    assert.equal(existsSync(join(targetDir, 'PROTOTYPE.md')), true);
+  });
+
+  test('future template: template not in pinned enum accepted via live introspection', () => {
+    const targetDir = join(TMP_DIR, 'future-template-app');
+    const tempBrief = join(TMP_DIR, 'future-brief.md');
+    const briefContent = `---
+schema: b2i-brief@1
+template: plugin
+distilled: "Plugin archetype for developer tools"
+---
+# Plugin System
+
+## Goal
+- Build modular plugin engine
+
+## Core flows
+1. Load plugin module from disk
+2. Dispatch hook events to plugin
+
+## Out of scope
+- Plugin marketplace
+`;
+    writeFileSync(tempBrief, briefContent, 'utf8');
+
+    // Plain b2i check must fail because 'plugin' is not in the pinned enum
+    const checkRes = runB2i(['check', tempBrief]);
+    assert.equal(checkRes.code, 1);
+    assert.match(checkRes.all, /template: invalid "plugin"/);
+
+    // Handoff with mock listing 'plugin' must succeed
+    const res = runB2i(
+      ['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'],
+      { MOCK_I2P_TEMPLATES: 'web,api,cli,worker,library,plugin' }
+    );
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'live');
+    assert.ok(parsed.introspection.templates.includes('plugin'));
+    assert.match(parsed.note, /template accepted via live i2p introspection/);
+    assert.equal(existsSync(join(targetDir, 'PROTOTYPE.md')), true);
+  });
+
+  test('early error: template not in live set fails early naming live templates', () => {
+    const targetDir = join(TMP_DIR, 'early-err-app');
+    const tempBrief = join(TMP_DIR, 'worker-brief.md');
+    const briefContent = `---
+schema: b2i-brief@1
+template: worker
+distilled: "Queue worker prototype"
+---
+# Queue Worker
+
+## Goal
+- Process background jobs
+
+## Core flows
+1. Fetch item from queue
+2. Process job
+
+## Out of scope
+- Distributed locking
+`;
+    writeFileSync(tempBrief, briefContent, 'utf8');
+
+    // Mock i2p only supports web and cli
+    const res = runB2i(
+      ['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P],
+      { MOCK_I2P_TEMPLATES: 'web,cli' }
+    );
+    assert.equal(res.code, 1);
+    assert.match(res.all, /template "worker" is not supported by the live idea2prototype generator/);
+    assert.match(res.all, /available: web, cli/);
+    assert.equal(existsSync(targetDir), false);
+    assert.equal(existsSync(tempBrief), true);
+  });
+
+  test('fallback on garbage: invalid JSON falls back to pinned templates', () => {
+    const targetDir = join(TMP_DIR, 'fallback-garbage-app');
+    const tempBrief = join(TMP_DIR, 'garbage-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(
+      ['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'],
+      { MOCK_I2P_MODE: 'garbage' }
+    );
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'pinned');
+    assert.equal(parsed.introspection.reason, 'invalid-json');
+    assert.equal(existsSync(join(targetDir, 'PROTOTYPE.md')), true);
+  });
+
+  test('fallback on exit-1: mock error falls back to pinned templates', () => {
+    const targetDir = join(TMP_DIR, 'fallback-fail-app');
+    const tempBrief = join(TMP_DIR, 'fail-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(
+      ['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'],
+      { MOCK_I2P_MODE: 'fail' }
+    );
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'pinned');
+    assert.equal(parsed.introspection.reason, 'non-zero');
+    assert.equal(existsSync(join(targetDir, 'PROTOTYPE.md')), true);
+  });
+
+  test('fallback on hang: timeout falls back to pinned templates', () => {
+    const targetDir = join(TMP_DIR, 'fallback-hang-app');
+    const tempBrief = join(TMP_DIR, 'hang-brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+
+    const res = runB2i(
+      ['handoff', targetDir, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'],
+      { MOCK_I2P_MODE: 'hang', B2I_INTROSPECT_TIMEOUT_MS: '300' }
+    );
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'pinned');
+    assert.equal(parsed.introspection.reason, 'timeout');
+    assert.equal(existsSync(join(targetDir, 'PROTOTYPE.md')), true);
+  });
+
+  test('custom command: B2I_HANDOFF_CMD skips introspection with custom-command reason', () => {
+    const res = runB2i(
+      ['handoff', 'custom-app', '--brief', join(FIXTURES_DIR, 'valid-brief.md'), '--dry-run', '--json'],
+      { B2I_HANDOFF_CMD: 'custom-scaffold-tool' }
+    );
+    assert.equal(res.code, 0);
+    const parsed = JSON.parse(res.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.introspection.source, 'pinned');
+    assert.equal(parsed.introspection.reason, 'custom-command');
   });
 });
 

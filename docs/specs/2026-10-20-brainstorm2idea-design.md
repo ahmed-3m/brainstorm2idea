@@ -295,3 +295,6 @@ Personas, success metrics, competitor scanning, PRD-lite output, suggested `add`
 
 ### Future (Post-v0.4.x)
 1. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.
+
+### v0.5.0
+- Future#1 shipped: live idea2prototype template introspection via `i2p list --json` with pinned fallback (`VALID_TEMPLATES` minus none) and configurable timeout via `B2I_INTROSPECT_TIMEOUT_MS`.

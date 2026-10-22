@@ -128,3 +128,11 @@ jobs:
           grep -q '^## Out of scope' "$P"
           grep -q 'Compare local .env against repository .env.example' "$P"
           test ! -f "$RUNNER_TEMP/brief.md"  # brief is consumed only on verified success
+
+      - name: Verify live/pinned template introspection contract
+        run: |
+          node bin/b2i.mjs spark --seed link-grabber --output brief2.md
+          OUT=$(node bin/b2i.mjs handoff contract-demo2 --brief brief2.md --dry-run --json)
+          rm -f brief2.md
+          echo "$OUT" | grep -q '"introspection"'
+          echo "$OUT" | grep -q '"templates": \['

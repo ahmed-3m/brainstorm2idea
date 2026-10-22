@@ -30,7 +30,7 @@ Brainstorm2idea score — 85/100 (Grade B - GOOD)
 
 <img src="./assets/readme/workflow.svg" width="100%" alt="Pipeline: fuzzy idea → brief.md (schema b2i-brief@1) → check and score → handoff → running prototype via idea2prototype or a standalone workspace">
 
-The brief is a contract, not a conversation log. Every stage is a single deterministic command; the brief file is deleted only after a verified handoff, never before.
+The brief is a contract, not a conversation log. Every stage is a single deterministic command; the brief file is deleted only after a verified handoff, never before. Handoff validates templates against the live idea2prototype catalog when reachable, falling back to the shipped set offline.
 
 ## Quickstart
 

@@ -109,17 +109,19 @@ Each has a regression test that fails on `24bc9e4`, the merge of #4.
 ### npm — `@ahmed-3m/brainstorm2idea` (published 0.4.2)
 
 - ❌ **0.4.2's bin is broken on Linux and macOS (Part 1, #1).** Needs a 0.4.3 release from this branch. That's your call: I did not bump the version or publish.
-- ✅ `files` ships bin, skill, scripts, commands, agents, README and LICENSE. CI's package-smoke job now runs the npm-linked bin, so this class of bug fails CI.
+- ✅ `files` ships bin, skill, scripts, commands, the host guides (`hosts/`), README and LICENSE. CI's package-smoke job now runs the npm-linked bin, so this class of bug fails CI.
 - ✅ `engines.node >= 18.17` is honoured: the full suite passes on 18.17.0. Zero dependencies. Provenance is on in the publish job.
 - ✅ `.zcode-plugin/` and `.claude-plugin/` are now in `files`, so both manifests ship in the tarball.
 
 ### Claude Code plugin marketplace
 
-- ✅ **`.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` added** (#23). The marketplace has one entry, `brainstorm2idea`, with `source: "./"`. `claude plugin validate .` passes with no warnings, for the marketplace and for the plugin manifest. The README has the install line: `/plugin install brainstorm2idea --marketplace ahmed-3m/brainstorm2idea`. The consistency suite pins both versions to the engine's.
+- ✅ **`.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` added** (#23). The marketplace has one entry, `brainstorm2idea`, with `source: "./"`. `claude plugin validate .` passes with no warnings, for the marketplace and for the plugin manifest. The README has the install lines: `/plugin marketplace add ahmed-3m/brainstorm2idea`, then `/plugin install brainstorm2idea@brainstorm2idea`. The consistency suite pins both versions to the engine's.
 - ✅ **The host guides moved from `agents/` to `hosts/`** (#23), so Claude Code no longer loads them as subagents named AGENTS and CLAUDE. A consistency test keeps `agents/` to subagent definitions only.
 - ✅ After #4, all four commands' frontmatter parses (it was an error for `/b2i-export`).
 - ✅ The skill frontmatter is valid (`name` matches its directory, description < 1024 chars).
-- ⚠️ Not verified: a live install through `/plugin install`. That needs this PR merged to main, since the marketplace is read from the default branch.
+- ✅ **A real install from a local checkout works.** I ran `claude plugin marketplace add ./`, then `claude plugin install brainstorm2idea@brainstorm2idea`, in a throwaway `CLAUDE_CONFIG_DIR`. The plugin installed and is enabled at 0.4.2. The installed copy has the skill, its scripts and the four commands, and no `agents/`. The bundled engine runs.
+- ⚠️ Not verified: an install from GitHub (`ahmed-3m/brainstorm2idea`). That needs this PR merged to main, since the marketplace is read from the default branch.
+- Note: `source: "./"` copies the whole repo (tests, docs, dogfood) into the plugin cache. That's harmless, but a `skills/`+`commands/`-only source would be leaner.
 
 ### ZCode — `.zcode-plugin/plugin.json`
 

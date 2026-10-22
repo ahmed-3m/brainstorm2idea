@@ -36,10 +36,11 @@ The brief is a contract, not a conversation log. Every stage is a single determi
 
 ### In a coding agent (Antigravity, Claude Code, ZCode)
 
-In Claude Code, install the plugin (skill + slash commands) from this repo's marketplace:
+In Claude Code, add this repo as a marketplace, then install the plugin (skill + slash commands):
 
 ```bash
-/plugin install brainstorm2idea --marketplace ahmed-3m/brainstorm2idea
+/plugin marketplace add ahmed-3m/brainstorm2idea
+/plugin install brainstorm2idea@brainstorm2idea
 ```
 
 Load the `brainstorm2idea` skill or run a slash command. The agent asks 3–5 adaptive questions, drafts the brief, requests your approval, writes `brief.md`, checks and scores it, then offers handoff.

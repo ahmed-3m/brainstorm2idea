@@ -7,7 +7,7 @@ import { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValu
 // Re-export for backward compatibility (tests and external consumers import from engine)
 export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue, sanitizeInlineText };
 
-export const VERSION = '0.4.1';
+export const VERSION = '0.4.2';
 export const SCHEMA_VERSION = 'b2i-brief@1';
 export const VALID_TEMPLATES = ['web', 'api', 'cli', 'worker', 'library', 'none'];
 

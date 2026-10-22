@@ -288,7 +288,10 @@ Personas, success metrics, competitor scanning, PRD-lite output, suggested `add`
 - `b2i dump [file|-] [--output <path>] [--json]`: mechanical de-noiser for raw transcripts and brain dumps
 - `skills/brainstorm2idea/scripts/parser.mjs`: reusable parser module extracted from the engine
 - `CLI_COMMANDS` export + consistency guards binding the router surface to `SKILL.md` / `AGENTS.md`
+- `b2i check --fix`: mechanical auto-repair (frontmatter quoting, missing schema, whitespace)
+- `b2i score --json` structured `categories` sub-scores
+- Six new `b2i spark` archetypes (24 → 30)
+- `i2p-contract` CI job: real `idea2prototype` integration test — feeds `b2i handoff` output into the published `@ahmed-3m/idea2prototype@latest` on every push/PR plus weekly (complements the `mock-i2p` fixture)
 
 ### Future (Post-v0.4.x)
 1. Always-current handoff (unpinned `i2p` template discovery) once `i2p` exposes machine-readable template introspection.
-2. Real `idea2prototype` integration test (currently only the `mock-i2p` fixture is exercised in CI).

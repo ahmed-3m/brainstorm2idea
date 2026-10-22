@@ -8,6 +8,7 @@ import {
   SCHEMA_VERSION,
   VERSION,
   CLI_COMMANDS,
+  HELP,
 } from '../skills/brainstorm2idea/scripts/brainstorm2idea.mjs';
 
 // CLI output is asserted as plain text: a FORCE_COLOR in the caller's
@@ -132,7 +133,17 @@ describe('Consistency Guards', () => {
     assert.equal(res.status, 0);
     for (const cmd of CLI_COMMANDS) {
       assert.match(res.stdout, new RegExp(`b2i ${cmd}\\b`), `help output lists "${cmd}"`);
+      assert.ok(HELP[cmd], `HELP map has an entry for "${cmd}"`);
+      assert.match(HELP[cmd], new RegExp(`b2i ${cmd}\\b`), `HELP[${cmd}] includes usage string`);
     }
+
+    const handoffHelp = spawnSync(process.execPath, [resolve('bin/b2i.mjs'), 'handoff', '--help'], { encoding: 'utf8' });
+    assert.equal(handoffHelp.status, 0, 'handoff --help exits 0');
+    assert.match(handoffHelp.stdout, /Usage: b2i handoff/, 'handoff --help prints usage');
+
+    const helpCheck = spawnSync(process.execPath, [resolve('bin/b2i.mjs'), 'help', 'check'], { encoding: 'utf8' });
+    assert.equal(helpCheck.status, 0, 'help check exits 0');
+    assert.match(helpCheck.stdout, /Usage: b2i check/, 'help check prints usage');
   });
 
   test('the publish workflow fails loudly instead of silently skipping npmjs', () => {

@@ -18,6 +18,17 @@ export const VERSION = '0.4.3';
 // and asserted against SKILL.md / AGENTS.md by the consistency test suite.
 export const CLI_COMMANDS = ['check', 'score', 'spark', 'init', 'dump', 'export', 'handoff', 'list'];
 
+export const HELP = {
+  check: `Usage: b2i check [brief|-] [--fix] [--json]\n\nRun 7 hard lint checks on brief.md or stdin (compact verdict, max 3 failure notes).`,
+  score: `Usage: b2i score [brief|-] [--json]\n\nCompute 0–100 Doability & Rabbit-Hole score with per-category breakdown.`,
+  spark: `Usage: b2i spark [category] [--seed <id>] [--output <path>] [--force] [--json]\n\nBrowse 30 curated prototype archetypes or seed a complete brief.md.`,
+  init: `Usage: b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]\n\nScaffold a starter brief.md with TODO sections.`,
+  dump: `Usage: b2i dump [file|-] [--template web|api|cli|worker|library|none] [--output <path>] [--force] [--json]\n\nDe-noise a raw transcript or dump into a draft brief skeleton.`,
+  export: `Usage: b2i export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]\n\nExport approved brief to kickoff prompt, GitHub issues, PRD, or JSON.`,
+  handoff: `Usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]\n\nPre-flight check and scaffold project into idea2prototype or raw PROTOTYPE.md.`,
+  list: `Usage: b2i list [--json]\n\nPrint schema version (b2i-brief@1) and supported templates.`,
+};
+
 // ANSI terminal colors (strictly disabled in non-TTY or when NO_COLOR is set)
 export const useColor = () => {
   if (process.env.NO_COLOR) return false;
@@ -183,6 +194,21 @@ export function validateBrief(content, options = {}) {
     }
   }
 
+  // Two-product smell soft warning (advisory only)
+  const goalBullets = (goalSec?.content || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => /^[-*+]\s+.+/.test(l))
+    .map((l) => l.replace(/^[-*+]\s+/, '').trim());
+  const twoProductCandidates = [...goalBullets, (meta.distilled || '').trim()].filter(Boolean);
+  const smellCandidate = twoProductCandidates.find(
+    (t) => /\b(?:and also|but also|as well as)\b/i.test(t) || /\bboth\b[^.]{0,60}\band\b/i.test(t)
+  );
+  if (smellCandidate) {
+    const snippet = smellCandidate.slice(0, 40);
+    warnings.push(`two-product smell: "${snippet}…" joins two deliverables — brief one product and park the other in ## Out of scope`);
+  }
+
   const passed = 7 - errors.length;
   const ok = errors.length === 0;
 
@@ -316,6 +342,10 @@ export function scoreBrief(content) {
   }
   if (templateMismatch) {
     tips.push(`💡 Alignment notice: ${templateMismatch}`);
+  }
+  const twoProductWarn = valid.warnings.find((w) => w.startsWith('two-product smell: '));
+  if (twoProductWarn) {
+    tips.push(`💡 Two-product smell: ${twoProductWarn.slice('two-product smell: '.length)}`);
   }
 
   return {
@@ -930,7 +960,7 @@ export function cmdHandoff(args) {
   }
 
   if (!dir) {
-    const err = 'usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]';
+    const err = 'usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json] (prefer a fresh, empty directory)';
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
     else console.error(err);
     return 1;
@@ -1413,14 +1443,24 @@ export function cmdDump(args) {
   const isJson = args.includes('--json');
   let outputPath = null;
   let inputPath = null;
+  let template = null;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--output' && args[i + 1]) {
       outputPath = args[++i];
+    } else if (a === '--template' && args[i + 1]) {
+      template = args[++i].toLowerCase();
     } else if (!a.startsWith('--') && !inputPath) {
       inputPath = a;
     }
+  }
+
+  if (template && !VALID_TEMPLATES.includes(template)) {
+    const err = `invalid template "${template}" (must be one of: ${VALID_TEMPLATES.join(', ')})`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea dump — ${c.red('FAIL')}\n  ${err}`);
+    return 1;
   }
 
   let content;
@@ -1472,9 +1512,12 @@ export function cmdDump(args) {
     ?.trim() || denoised.slice(0, 100);
   const distilled = [...quoteFrontmatterValue(firstSentence)].slice(0, 200).join('');
 
+  const chosenTemplate = template || 'none';
+  const flowsHeader = chosenTemplate === 'library' ? '## Public API' : '## Core flows';
+
   const draft = `---
 schema: ${SCHEMA_VERSION}
-template: none
+template: ${chosenTemplate}
 distilled: "${distilled}"
 ---
 # Draft Prototype
@@ -1482,7 +1525,7 @@ distilled: "${distilled}"
 ## Goal
 - TODO: Define the primary user problem and solution
 
-## Core flows
+${flowsHeader}
 1. TODO: Smallest demoable flow (1-3 numbered items)
 
 ## Out of scope
@@ -1728,7 +1771,16 @@ export function main(argv = process.argv.slice(2)) {
   }
 }
 
-function route(command, rest) {
+function route(command, rest = []) {
+  if (command === 'help' && rest[0] && HELP[rest[0]]) {
+    console.log(HELP[rest[0]]);
+    return 0;
+  }
+  if (CLI_COMMANDS.includes(command) && (rest.includes('--help') || rest.includes('-h'))) {
+    console.log(HELP[command]);
+    return 0;
+  }
+
   switch (command) {
     case 'check':
       return cmdCheck(rest);
@@ -1761,7 +1813,7 @@ function route(command, rest) {
       console.log(`  b2i score [brief] [--json]`);
       console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--force] [--json]`);
       console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);
-      console.log(`  b2i dump [file|-] [--output <path>] [--force] [--json]`);
+      console.log(`  b2i dump [file|-] [--template web|api|cli|worker|library|none] [--output <path>] [--force] [--json]`);
       console.log(`  b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);

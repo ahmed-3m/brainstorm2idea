@@ -5,9 +5,16 @@
 ### Added
 - First-class programmatic API via package.json `exports` map and `main`: root import now resolves to the engine; `./parser`, `./sparks`, and `./constants` subpaths; `./skills/*` wildcard preserves deep imports; CI smoke now imports the installed package.
 - Live idea2prototype template introspection in `b2i handoff`: queries `i2p list --json` before scaffolding to accept newly released templates without engine upgrades, while gracefully falling back to the pinned template set offline or on custom commands (`B2I_INTROSPECT_TIMEOUT_MS` knob for testing).
+- Per-command help (`b2i <command> --help`, `b2i <command> -h`, and `b2i help <command>`) centrally intercepted in the router and backed by an exported `HELP` map.
+- Optional `--template <t>` flag on `b2i dump` (validated against the template enum, default `none`; `library` template emits `## Public API`).
 
 ### Changed
 - Engine module split: the spark catalog (`SPARK_CATEGORIES`, `SPARK_CATALOG`, `generateBriefFromSpark`) now lives in `skills/brainstorm2idea/scripts/sparks.mjs` and the shared schema/template constants in `scripts/constants.mjs`; the engine imports and re-exports both, so every deep-import consumer sees the identical export surface. The tarball smoke test asserts the new modules ship in the published package.
+- Two-product smell detection: advisory soft warning in `validateBrief` and tip in `scoreBrief` when a Goal bullet or `distilled` one-liner joins two deliverables, with zero scoring deductions.
+- Docs alignment: clarified exit code in SKILL.md for `score` on briefs failing the 7 checks, documented non-software `template: none` flow, and added empty-directory guidance to handoff.
+
+### Fixed
+- `handoff` and `check` treated `-h` as an argument (directory or file path) instead of displaying help.
 
 ## [v0.4.3] — 2026-10-22
 

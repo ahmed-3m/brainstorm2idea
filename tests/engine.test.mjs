@@ -11,6 +11,7 @@ import {
   scoreBrief,
   fixBrief,
   introspectI2pTemplates,
+  HELP,
   RABBIT_HOLES,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
@@ -1176,5 +1177,163 @@ describe('7. CLI Command: dump', () => {
     assert.equal(res.code, 0);
     const { meta } = parseFrontmatter(res.stdout);
     assert.match(meta.distilled, /recipe box/i, 'distilled comes from the first substantive sentence');
+  });
+
+  test('b2i dump --template sets template in frontmatter and defaults to none', () => {
+    const resCli = runB2i(['dump', '-', '--template', 'cli'], {}, 'Build a CLI tool that parses logs.');
+    assert.equal(resCli.code, 0);
+    const { meta: metaCli } = parseFrontmatter(resCli.stdout);
+    assert.equal(metaCli.template, 'cli');
+    assert.match(resCli.stdout, /## Core flows/);
+
+    const resNone = runB2i(['dump', '-'], {}, 'Build a plain idea.');
+    assert.equal(resNone.code, 0);
+    const { meta: metaNone } = parseFrontmatter(resNone.stdout);
+    assert.equal(metaNone.template, 'none');
+  });
+
+  test('b2i dump --template library emits Public API section like init', () => {
+    const res = runB2i(['dump', '-', '--template', 'library'], {}, 'Build a zero-dependency log parsing library.');
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /## Public API/);
+    assert.doesNotMatch(res.stdout, /## Core flows/);
+    const { meta } = parseFrontmatter(res.stdout);
+    assert.equal(meta.template, 'library');
+  });
+
+  test('b2i dump rejects invalid template with FAIL pattern matching init', () => {
+    const res = runB2i(['dump', '-', '--template', 'quantum'], {}, 'Some idea');
+    assert.equal(res.code, 1);
+    assert.match(res.all, /Brainstorm2idea dump — /);
+    assert.match(res.all, /invalid template "quantum" \(must be one of: web, api, cli, worker, library, none\)/);
+  });
+});
+
+describe('8. Two-Product Smell Detection & Help Interception', () => {
+  test('validateBrief emits exact soft warning on two-product smell in Goal bullet', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: web
+distilled: Shared plant watering tracker
+---
+# PlantPulse
+
+## Goal
+- Build a web dashboard and also a mobile app for tracking plants.
+
+## Core flows
+1. Track watering dates
+
+## Out of scope
+- Push notifications
+`;
+    const res = validateBrief(brief);
+    assert.equal(res.ok, true, 'soft warning does not fail validation');
+    assert.equal(res.passed, 7);
+    const expected = 'two-product smell: "Build a web dashboard and also a mobile …" joins two deliverables — brief one product and park the other in ## Out of scope';
+    assert.ok(res.warnings.includes(expected), `expected warning "${expected}", got: ${JSON.stringify(res.warnings)}`);
+  });
+
+  test('validateBrief emits soft warning on two-product smell in distilled one-liner', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: cli
+distilled: Build both a CLI tool and a web server for log analysis
+---
+# DualTool
+
+## Goal
+- Parse log files
+
+## Core flows
+1. Run parser
+
+## Out of scope
+- GUI
+`;
+    const res = validateBrief(brief);
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    const expected = 'two-product smell: "Build both a CLI tool and a web server f…" joins two deliverables — brief one product and park the other in ## Out of scope';
+    assert.ok(res.warnings.includes(expected), `expected warning "${expected}", got: ${JSON.stringify(res.warnings)}`);
+  });
+
+  test('scoreBrief appends two-product smell tip with zero deduction', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: web
+distilled: Plant tracker web app
+---
+# PlantPulse
+
+## Goal
+- Track plant watering as well as generate plant care calendars.
+
+## Core flows
+1. Tap watered
+
+## Out of scope
+- Payments
+- User accounts
+
+## Risks & assumptions
+- RISK: Users may forget
+`;
+    const scoreRes = scoreBrief(brief);
+    assert.equal(scoreRes.ok, true);
+    const expectedTip = '💡 Two-product smell: "Track plant watering as well as generate…" joins two deliverables — brief one product and park the other in ## Out of scope';
+    assert.ok(scoreRes.tips.includes(expectedTip), `tips should include "${expectedTip}", got: ${JSON.stringify(scoreRes.tips)}`);
+    // Assert zero deduction
+    assert.equal(scoreRes.score, 100);
+    assert.deepEqual(scoreRes.breakdown, { scope: 30, rabbitHoles: 40, alignment: 30 });
+  });
+
+  test('clean brief has no two-product smell warning or tip', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: web
+distilled: Lightweight shared plant watering tracker showing days until next water
+---
+# PlantPulse
+
+## Goal
+- Track last watering date and next due date for household plants.
+- Provide a single-tap button to mark a plant as watered.
+
+## Core flows
+1. View list of plants with status badge.
+
+## Out of scope
+- Push notifications
+- User accounts
+`;
+    const val = validateBrief(brief);
+    assert.ok(!val.warnings.some((w) => w.includes('two-product smell')));
+    const sc = scoreBrief(brief);
+    assert.ok(!sc.tips.some((t) => t.includes('Two-product smell')));
+  });
+
+  test('per-command help centrally intercepts --help and -h', () => {
+    const handoffLong = runB2i(['handoff', '--help']);
+    assert.equal(handoffLong.code, 0);
+    assert.match(handoffLong.stdout, /Usage: b2i handoff/);
+
+    const handoffShort = runB2i(['handoff', '-h']);
+    assert.equal(handoffShort.code, 0);
+    assert.match(handoffShort.stdout, /Usage: b2i handoff/);
+
+    const checkShort = runB2i(['check', '-h']);
+    assert.equal(checkShort.code, 0);
+    assert.match(checkShort.stdout, /Usage: b2i check/);
+
+    const helpCheck = runB2i(['help', 'check']);
+    assert.equal(helpCheck.code, 0);
+    assert.match(helpCheck.stdout, /Usage: b2i check/);
+  });
+
+  test('handoff missing <dir> prints usage message with directory preference', () => {
+    const res = runB2i(['handoff']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /usage: b2i handoff <dir>.*\(prefer a fresh, empty directory\)/);
   });
 });

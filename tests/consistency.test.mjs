@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -17,6 +17,19 @@ describe('Consistency Guards', () => {
 
     const zcode = JSON.parse(readFileSync(resolve('.zcode-plugin/plugin.json'), 'utf8'));
     assert.equal(zcode.version, VERSION, '.zcode-plugin/plugin.json version matches engine VERSION');
+  });
+
+  test('command frontmatter values are YAML scalars (an unquoted [ or { breaks the whole block)', () => {
+    // An unquoted `argument-hint: [--format a|b]` is a YAML parse error, and
+    // Claude Code then loads the command with all its frontmatter dropped.
+    for (const f of readdirSync(resolve('commands')).filter((n) => n.endsWith('.md'))) {
+      const fm = readFileSync(resolve('commands', f), 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      assert.ok(fm, `commands/${f} has a frontmatter block`);
+      for (const line of fm[1].split(/\r?\n/)) {
+        const value = line.slice(line.indexOf(':') + 1).trim();
+        assert.doesNotMatch(value, /^[[{]/, `commands/${f}: quote the value in "${line}"`);
+      }
+    }
   });
 
   test('SCHEMA_VERSION is consistent across code, SKILL.md, and README.md', () => {

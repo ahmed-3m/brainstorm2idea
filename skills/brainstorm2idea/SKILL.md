@@ -17,7 +17,7 @@ node "<skill-base>/scripts/brainstorm2idea.mjs" <command>
 b2i <command>
 ```
 
-`<skill-base>` is this skill's directory. Commands:
+`<skill-base>` is this skill's directory. Below and in the `/b2i*` commands, `b2i <command>` is shorthand: if `b2i` is not on PATH, run the `node "<skill-base>/…"` form instead. Commands:
 
 - `check [brief|-] [--fix] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes); `--fix` rewrites mechanical issues in place (frontmatter value quoting, missing schema key, trailing whitespace — file paths only, never invents content)
 - `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F, advisory exit 0); `--json` includes structured per-category sub-scores (`categories.scope`, `categories.rabbitHoles`, `categories.alignment`) with the evidence behind each
@@ -61,7 +61,7 @@ Flows that cannot be demoed belong in `## Out of scope`. If the idea is not soft
 1. Accept raw input without judgment.
 2. Infer every field already implied.
 3. Ask adaptively, **one question at a time**, multiple-choice when possible (expect 3–5, hard cap 8; stop early when remaining unknowns can be recorded as low-risk `ASSUMPTION:` lines).
-   - **Interactive Modal Guidance:** When running in an agent environment equipped with `ask_question`, use it to render interactive multiple-choice options (prefixing the best prototype path with `(Recommended)`). This minimizes typing overhead for the user.
+   - **Interactive Modal Guidance:** When your host has a multiple-choice question tool (e.g. `AskUserQuestion`, `ask_question`), use it to render interactive multiple-choice options (prefixing the best prototype path with `(Recommended)`). This minimizes typing overhead for the user.
 4. If the dump is secretly two projects, split them and brief one first.
 
 ### Dump De-noiser Protocol (`/b2i-dump`)
@@ -74,7 +74,7 @@ When the user triggers `/b2i-dump` or pastes an unformatted voice memo, audio tr
 
 ### Idea Discovery & Spark Protocol (`/b2i-spark`)
 When the user has no idea, asks what to build, or seeks inspiration ("I don't know what to build", "Give me an idea for a CLI tool"):
-1. **Calibrate Preference:** If underspecified, use `ask_question` to determine their interest area (`devtools`, `productivity`, `local-ai`, `automation`, `cli`, `web`) and desired form factor.
+1. **Calibrate Preference:** If underspecified, ask (multiple-choice tool if available) to determine their interest area (`devtools`, `productivity`, `local-ai`, `automation`, `cli`, `web`) and desired form factor.
 2. **Match Curated Archetypes:** Query `b2i spark <category>` (or search the 30 built-in archetypes) and present 2–3 sharp prototype seeds.
 3. **Seed & Review:** When the user picks a concept, output or seed the brief via `b2i spark --seed <id> --output ./brief.md`, verify with `b2i check` and `b2i score`, and present for approval.
 4. **Handoff:** Chain directly into `b2i handoff <dir>`.

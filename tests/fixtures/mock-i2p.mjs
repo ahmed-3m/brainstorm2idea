@@ -31,6 +31,14 @@ for (let i = 2; i < args.length; i++) {
   else if (args[i] === '--idea' && args[i + 1]) idea = args[++i];
 }
 
+// Same rule as the real i2p: these values land verbatim in its JSON manifest.
+for (const [flag, value] of [['--name', name], ['--idea', idea]]) {
+  if (/["\\\u0000-\u001f]/.test(value)) {
+    console.error(`invalid ${flag} value — quotes, backslashes, and control characters are not allowed`);
+    process.exit(1);
+  }
+}
+
 const target = resolve(process.cwd(), dir);
 if (existsSync(target)) {
   console.error(`"${target}" exists and is not empty`);

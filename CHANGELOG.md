@@ -16,6 +16,7 @@
 - Frontmatter after leading blank lines: `check` now says it must start on line 1 (it reported schema, template and distilled as missing), and `check --fix` removes the blank lines.
 - `score` recognised a library brief's `## Public API` only with that exact casing.
 - Windows: `handoff --i2p <path to a .cmd or .bat>` failed with `EINVAL`. It now runs through the same escaped `cmd.exe` command line as the npx fallback, with the program path escaped too. That line is passed as one string, which also silences Node 24's DEP0190 warning.
+- `handoff` (i2p target) failed on a brief that passes `check` when its title or `distilled` contained `"` or `\`: i2p rejects those in `--name`/`--idea`. They are now passed to i2p as `'` and `/`. Found by the A/B efficacy eval.
 - The test suite failed when `FORCE_COLOR` was set in the environment.
 - **The npm-installed `b2i` was a silent no-op on Linux/macOS.** npm links the bin as a bare `b2i` symlink, so the engine's `argv[1].endsWith('b2i.mjs')` guard never fired: `npx @ahmed-3m/brainstorm2idea …` and global installs printed nothing and exited 0 — including `check` on an invalid brief. `bin/b2i.mjs` now calls `main()` explicitly and the engine compares real paths. A CI step runs the npm-linked bin.
 - `handoff --target raw` dropped Goal/Core flows/Out of scope when headings were not Title-cased (which `check` accepts), wrote a hollow `PROTOTYPE.md`, then deleted the brief. Sections are now matched case-insensitively, and an existing `PROTOTYPE.md` is never overwritten.

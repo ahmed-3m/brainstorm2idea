@@ -171,6 +171,58 @@ export const SPARK_CATALOG = [
       'Safe by default: read-only unless --write is passed',
     ],
   },
+  {
+    id: 'lockfile-diff',
+    category: 'devtools',
+    template: 'cli',
+    name: 'lockfile-diff',
+    distilled: 'CLI diff inspector comparing package-lock.json dependencies across git branches or commits',
+    goals: [
+      'Compare dependency trees between two git refs or against local working copy',
+      'Summarize added, upgraded, and removed packages with version delta tables',
+    ],
+    flows: [
+      'Read package-lock.json from current workspace and target git commit',
+      'Diff package names and resolved semver versions',
+      'Print clean terminal summary highlighting major version bumps',
+    ],
+    outOfScope: [
+      'Automated dependency vulnerability scanning',
+      'Automatic package installation or lockfile mutation',
+    ],
+    risks: [
+      'ASSUMPTION: Lockfile conforms to npm package-lock version 2 or 3 format',
+    ],
+    notes: [
+      'Pure Node.js parser using git show to inspect target branch',
+    ],
+  },
+  {
+    id: 'md-table-align',
+    category: 'devtools',
+    template: 'library',
+    name: 'md-table-align',
+    distilled: 'Zero-dependency markdown table parser and column alignment formatter',
+    goals: [
+      'Parse unaligned markdown tables into structured row and column data',
+      'Render pretty-printed ASCII markdown tables with uniform column widths',
+    ],
+    flows: [
+      'parseTable(markdown: string): TableData',
+      'formatTable(data: TableData, options?: FormatOptions): string',
+      'alignColumns(markdown: string): string',
+    ],
+    outOfScope: [
+      'Spreadsheet formula calculation or cell expression evaluation',
+      'HTML table rendering or document conversion',
+    ],
+    risks: [
+      'ASSUMPTION: Tables use standard GFM pipe syntax with delimiter rows',
+    ],
+    notes: [
+      'Lightweight utility for documentation generators and CLI formatters',
+    ],
+  },
 
   // --- PRODUCTIVITY ---
   {
@@ -303,6 +355,58 @@ export const SPARK_CATALOG = [
       'Single-page vanilla JS app; runs from any static server',
     ],
   },
+  {
+    id: 'todo-collector',
+    category: 'productivity',
+    template: 'cli',
+    name: 'todo-collector',
+    distilled: 'Workspace task crawler scanning markdown files for open checkbox items and grouping them by file',
+    goals: [
+      'Find open and completed markdown checkboxes across workspace files',
+      'Output an organized terminal checklist grouped by document path',
+    ],
+    flows: [
+      'Scan repository for markdown files respecting ignore patterns',
+      'Extract task line text and status from checkbox syntax',
+      'Print grouped task list with line numbers and completion metrics',
+    ],
+    outOfScope: [
+      'External task management service synchronization',
+      'Automatic file editing or inline task status updating',
+    ],
+    risks: [
+      'ASSUMPTION: Tasks follow standard markdown checkbox bracket conventions',
+    ],
+    notes: [
+      'Read-only workspace crawler for rapid morning catchup',
+    ],
+  },
+  {
+    id: 'weekly-retro',
+    category: 'productivity',
+    template: 'cli',
+    name: 'weekly-retro',
+    distilled: 'Weekly reflection CLI prompting 3 structured retrospective questions and appending to markdown log',
+    goals: [
+      'Guide end-of-week reflection through 3 structured prompt questions',
+      'Append formatted retrospective summaries to a persistent markdown journal',
+    ],
+    flows: [
+      'Prompt user for weekly accomplishments, obstacles, and next priorities',
+      'Format responses into a timestamped markdown section',
+      'Append entry to journal file and display completion confirmation',
+    ],
+    outOfScope: [
+      'Team collaboration features or remote survey synchronization',
+      'Complex analytics dashboards or productivity scoring algorithms',
+    ],
+    risks: [
+      'ASSUMPTION: Terminal supports standard interactive text line input',
+    ],
+    notes: [
+      'Simple five-minute Friday routine helper with zero setup',
+    ],
+  },
 
   // --- LOCAL-AI ---
   {
@@ -405,6 +509,58 @@ export const SPARK_CATALOG = [
     ],
     notes: [
       'High-speed CI validator for coding agents',
+    ],
+  },
+  {
+    id: 'tool-call-parser',
+    category: 'local-ai',
+    template: 'library',
+    name: 'tool-call-parser',
+    distilled: 'Robust text parser extracting structured function tool calls and JSON arguments from model responses',
+    goals: [
+      'Extract named function calls and parsed JSON arguments from LLM output strings',
+      'Handle partial JSON blocks and markdown code fences gracefully',
+    ],
+    flows: [
+      'extractToolCalls(response: string): ToolInvocation[]',
+      'parseJsonArguments(argsText: string): Record<string, unknown>',
+      'formatToolResult(callId: string, result: unknown): string',
+    ],
+    outOfScope: [
+      'Direct HTTP communication with remote model providers',
+      'Dynamic arbitrary code execution or unvalidated eval invocations',
+    ],
+    risks: [
+      'ASSUMPTION: Models emit identifiable tool delimiters or JSON markdown blocks',
+    ],
+    notes: [
+      'Zero-dependency helper for building deterministic AI agent loops',
+    ],
+  },
+  {
+    id: 'context-budget',
+    category: 'local-ai',
+    template: 'cli',
+    name: 'context-budget',
+    distilled: 'CLI context window calculator estimating token usage across system prompts, history, and files',
+    goals: [
+      'Estimate total token consumption across prompt templates and attached context files',
+      'Warn if combined token counts exceed configured model context limits',
+    ],
+    flows: [
+      'Inspect prompt files and input references specified in config',
+      'Calculate token approximations using character and word heuristics',
+      'Display terminal breakdown table with visual percentage capacity bar',
+    ],
+    outOfScope: [
+      'Model weight training or parameter optimization pipelines',
+      'Remote model API calls or network requests',
+    ],
+    risks: [
+      'ASSUMPTION: Heuristic token estimation ratio provides reliable budgeting headroom',
+    ],
+    notes: [
+      'Run in pre-commit or CI to prevent agent context overflows',
     ],
   },
 
@@ -568,6 +724,58 @@ export const SPARK_CATALOG = [
       'Polite default: sequential fetches with a delay between requests',
     ],
   },
+  {
+    id: 'log-pruner',
+    category: 'automation',
+    template: 'worker',
+    name: 'log-pruner',
+    distilled: 'Background worker monitoring configured directories to archive or prune expired log files',
+    goals: [
+      'Periodically inspect target directory for files older than retention threshold',
+      'Safely compress or remove expired logs while logging all operations',
+    ],
+    flows: [
+      'Wake on configured interval and scan target folder file modification dates',
+      'Identify files matching pattern that exceed max retention age in days',
+      'Delete or move expired files and write operation audit entry to disk',
+    ],
+    outOfScope: [
+      'Remote cloud storage uploads or distributed filesystem replication',
+      'Database row purging or table truncation',
+    ],
+    risks: [
+      'ASSUMPTION: Process runs with sufficient filesystem permissions on target log folder',
+    ],
+    notes: [
+      'Lightweight daemon running on pure Node.js timer loop',
+    ],
+  },
+  {
+    id: 'file-watch-trigger',
+    category: 'automation',
+    template: 'worker',
+    name: 'file-watch-trigger',
+    distilled: 'Filesystem directory watcher triggering configured terminal scripts on change with debouncing',
+    goals: [
+      'Watch specified file paths for modification, creation, or deletion events',
+      'Execute user-defined terminal command once change activity settles',
+    ],
+    flows: [
+      'Initialize recursive directory watcher using native filesystem events',
+      'Debounce rapid bursts of file modification signals within quiet window',
+      'Spawn child process command and stream output status to terminal',
+    ],
+    outOfScope: [
+      'Distributed network filesystem synchronization or remote triggers',
+      'Graphical system tray notifications or desktop widget integrations',
+    ],
+    risks: [
+      'ASSUMPTION: Operating system supports recursive directory watching',
+    ],
+    notes: [
+      'Zero dependencies; pure Node.js node:fs watch implementation',
+    ],
+  },
 
   // --- CLI ---
   {
@@ -700,6 +908,32 @@ export const SPARK_CATALOG = [
       'Pure Node: no curses bindings or native modules',
     ],
   },
+  {
+    id: 'http-bench-ping',
+    category: 'cli',
+    template: 'cli',
+    name: 'http-bench-ping',
+    distilled: 'Local HTTP benchmark CLI sending batch requests to an endpoint and reporting latency percentiles',
+    goals: [
+      'Measure endpoint latency across a configurable number of repeated requests',
+      'Calculate and display p50, p95, and p99 response duration percentiles',
+    ],
+    flows: [
+      'Parse target URL, concurrency limit, and total iteration count arguments',
+      'Dispatch sequential or pooled HTTP requests measuring millisecond durations',
+      'Compute distribution percentiles and render clean summary table in terminal',
+    ],
+    outOfScope: [
+      'Distributed denial of service stress testing across multiple machines',
+      'Complex multipart form generation or payload scripting languages',
+    ],
+    risks: [
+      'ASSUMPTION: Target endpoint is running locally or accepts quick test bursts',
+    ],
+    notes: [
+      'Built with Node.js native fetch and high-resolution performance timers',
+    ],
+  },
 
   // --- WEB ---
   {
@@ -805,6 +1039,32 @@ export const SPARK_CATALOG = [
     ],
     notes: [
       'Lightweight local documentation reader',
+    ],
+  },
+  {
+    id: 'color-palette-lab',
+    category: 'web',
+    template: 'web',
+    name: 'color-palette-lab',
+    distilled: 'Single-page color palette generator with hex conversion and contrast accessibility ratio checks',
+    goals: [
+      'Generate harmonious color palettes from a base hex or RGB color value',
+      'Calculate accessibility contrast ratios against white and dark backgrounds',
+    ],
+    flows: [
+      'Input base color via picker or text input to compute complementary shades',
+      'Display color swatches with hex, RGB, and contrast score badges',
+      'Copy selected color codes or CSS custom property tokens in one click',
+    ],
+    outOfScope: [
+      'Cloud accounts, color palette sharing galleries, or community voting',
+      'Desktop operating system eyedropper screen color sampling',
+    ],
+    risks: [
+      'ASSUMPTION: Browser implements standard canvas or CSS color parsing routines',
+    ],
+    notes: [
+      'Pure client-side HTML, CSS, and JavaScript with zero external frameworks',
     ],
   },
 ];

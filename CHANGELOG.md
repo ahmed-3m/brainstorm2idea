@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Prototype archetype catalog grew from 30 to 40 entries, adding: lockfile-diff, md-table-align, todo-collector, weekly-retro, tool-call-parser, context-budget, log-pruner, file-watch-trigger, http-bench-ping, and color-palette-lab.
 - First-class programmatic API via package.json `exports` map and `main`: root import now resolves to the engine; `./parser`, `./sparks`, and `./constants` subpaths; `./skills/*` wildcard preserves deep imports; CI smoke now imports the installed package.
 - Live idea2prototype template introspection in `b2i handoff`: queries `i2p list --json` before scaffolding to accept newly released templates without engine upgrades, while gracefully falling back to the pinned template set offline or on custom commands (`B2I_INTROSPECT_TIMEOUT_MS` knob for testing).
 - Per-command help (`b2i <command> --help`, `b2i <command> -h`, and `b2i help <command>`) centrally intercepted in the router and backed by an exported `HELP` map.

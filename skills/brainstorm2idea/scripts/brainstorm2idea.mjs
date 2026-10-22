@@ -21,7 +21,7 @@ export const CLI_COMMANDS = ['check', 'score', 'spark', 'init', 'dump', 'export'
 export const HELP = {
   check: `Usage: b2i check [brief|-] [--fix] [--json]\n\nRun 7 hard lint checks on brief.md or stdin (compact verdict, max 3 failure notes).`,
   score: `Usage: b2i score [brief|-] [--json]\n\nCompute 0–100 Doability & Rabbit-Hole score with per-category breakdown.`,
-  spark: `Usage: b2i spark [category] [--seed <id>] [--output <path>] [--force] [--json]\n\nBrowse 30 curated prototype archetypes or seed a complete brief.md.`,
+  spark: `Usage: b2i spark [category] [--seed <id>] [--output <path>] [--force] [--json]\n\nBrowse 40 curated prototype archetypes or seed a complete brief.md.`,
   init: `Usage: b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]\n\nScaffold a starter brief.md with TODO sections.`,
   dump: `Usage: b2i dump [file|-] [--template web|api|cli|worker|library|none] [--output <path>] [--force] [--json]\n\nDe-noise a raw transcript or dump into a draft brief skeleton.`,
   export: `Usage: b2i export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]\n\nExport approved brief to kickoff prompt, GitHub issues, PRD, or JSON.`,

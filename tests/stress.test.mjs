@@ -202,8 +202,8 @@ distilled: Safe handoff
     }
   });
 
-  test('8. Spark catalog integrity: all 30 archetypes pass check (7/7) and score >= 90', () => {
-    assert.equal(SPARK_CATALOG.length, 30, 'Catalog contains 30 curated archetypes');
+  test('8. Spark catalog integrity: all 40 archetypes pass check (7/7) and score >= 90', () => {
+    assert.equal(SPARK_CATALOG.length, 40, 'Catalog contains 40 curated archetypes');
     assert.equal(SPARK_CATEGORIES.length, 6, 'Catalog spans 6 categories');
 
     for (const spark of SPARK_CATALOG) {
@@ -223,7 +223,7 @@ distilled: Safe handoff
     // Basic listing
     const resList = runB2i(['spark']);
     assert.equal(resList.code, 0);
-    assert.match(resList.stdout, /Brainstorm2idea spark — 30 curated prototype archetypes/);
+    assert.match(resList.stdout, /Brainstorm2idea spark — 40 curated prototype archetypes/);
     assert.match(resList.stdout, /devtools, productivity/);
 
     // Filter by category
@@ -237,7 +237,7 @@ distilled: Safe handoff
     assert.equal(resJson.code, 0);
     const parsed = JSON.parse(resJson.stdout);
     assert.equal(parsed.ok, true);
-    assert.equal(parsed.total, 30);
+    assert.equal(parsed.total, 40);
 
     // Seed output to stdout
     const resSeed = runB2i(['spark', '--seed', 'env-diff']);

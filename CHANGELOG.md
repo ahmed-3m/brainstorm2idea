@@ -8,11 +8,11 @@
 - `parseSections` also returns `duplicates`: the headings that appear more than once.
 
 ### Changed
-- `spark --seed … --output` and `dump --output` refuse to overwrite an existing brief, as `init` already did. Pass `--force` to overwrite.
+- `spark --seed … --output` and `dump --output` refuse to overwrite an existing brief, as `init` already did, using an exclusive create, so concurrent runs can't both pass the check. Pass `--force` to overwrite.
 - The host guides moved from `agents/` to `hosts/` (`hosts/AGENTS.md`, `hosts/CLAUDE.md`). Claude Code loads `agents/` as subagents, so the guides showed up as junk agents named AGENTS and CLAUDE. The npm tarball now also ships `.claude-plugin/` and `.zcode-plugin/`.
 
 ### Fixed
-- `check` fails a brief with a duplicated Goal, Core flows / Public API or Out of scope section and names it. Before, the last copy silently won. Other duplicated sections are a warning.
+- `check` fails a brief with a duplicated Goal, Core flows / Public API or Out of scope section and names it. Before, the last copy silently won. Other duplicated sections are a warning, and the last copy is the one used whatever its case (`## Notes` then `## notes` used to keep the first). A brief with both `## Core flows` and `## Public API` also fails, since consumers read only one of them.
 - Frontmatter after leading blank lines: `check` now says it must start on line 1 (it reported schema, template and distilled as missing), and `check --fix` removes the blank lines.
 - `score` recognised a library brief's `## Public API` only with that exact casing.
 - Windows: `handoff --i2p <path to a .cmd or .bat>` failed with `EINVAL`. It now runs through the same escaped `cmd.exe` command line as the npx fallback, with the program path escaped too. That line is passed as one string, which also silences Node 24's DEP0190 warning.

@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Claude Code plugin manifest (`.claude-plugin/plugin.json`) and a single-plugin marketplace (`.claude-plugin/marketplace.json`): `/plugin install brainstorm2idea --marketplace ahmed-3m/brainstorm2idea`. The consistency suite pins both versions to the engine's.
+- Claude Code plugin manifest (`.claude-plugin/plugin.json`) and a single-plugin marketplace (`.claude-plugin/marketplace.json`): `/plugin marketplace add ahmed-3m/brainstorm2idea`, then `/plugin install brainstorm2idea@brainstorm2idea`. The consistency suite pins both versions to the engine's.
 - `spark --seed … --output` and `dump --output` take `--force` to overwrite an existing brief.
 - `parseSections` also returns `duplicates`: the headings that appear more than once.
 

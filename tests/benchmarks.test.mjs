@@ -16,6 +16,10 @@ import {
 
 const binPath = resolve(process.cwd(), 'bin/b2i.mjs');
 
+// CLI output is asserted as plain text: a FORCE_COLOR in the caller's
+// environment would otherwise leak into every spawned b2i.
+delete process.env.FORCE_COLOR;
+
 function runCli(args, input = null, env = {}) {
   const mergedEnv = { ...process.env, ...env };
   const res = spawnSync(process.execPath, [binPath, ...args], {

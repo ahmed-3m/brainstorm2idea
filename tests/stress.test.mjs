@@ -21,6 +21,10 @@ import {
 const B2I_CLI = resolve('bin/b2i.mjs');
 const TMP_DIR = resolve('tests/tmp-stress-sandbox');
 
+// CLI output is asserted as plain text: a FORCE_COLOR in the caller's
+// environment would otherwise leak into every spawned b2i.
+delete process.env.FORCE_COLOR;
+
 function runB2i(args, input = null, env = {}) {
   const opts = {
     encoding: 'utf8',
@@ -448,7 +452,7 @@ distilled: Sticker shop
       t.skip('cmd.exe is Windows-only');
       return;
     }
-    // Spawned exactly like handoff's fallback: spawnSync('npx', args.map(quoteCmdArg), { shell: true }).
+    // Spawned exactly like handoff's fallback: one escaped command line with { shell: true }.
     const shim = join(TMP_DIR, 'shim');
     mkdirSync(shim);
     writeFileSync(join(shim, 'argv.js'), 'console.log(JSON.stringify(process.argv.slice(2)));\n');
@@ -460,7 +464,7 @@ distilled: Sticker shop
       'a & b | c > d < e ^ f ( g ) !h!',
       'C:\\my dir\\sub\\',
     ];
-    const res = spawnSync('npx', args.map(quoteCmdArg), {
+    const res = spawnSync(['npx', ...args.map(quoteCmdArg)].join(' '), {
       encoding: 'utf8',
       shell: true,
       env: { ...process.env, PATH: `${shim};${process.env.PATH}`, B2I_INJECT: 'a" & echo INJECTED' },
@@ -518,5 +522,108 @@ distilled: Sticker shop
     };
     const merged = mergeSectionsIntoPrototype(proto, { sections });
     for (const text of Object.values(sections)) assert.ok(merged.includes(text), `kept verbatim: ${text}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The report's "Open" items, now fixed. Each test fails on 24bc9e4.
+// ---------------------------------------------------------------------------
+
+describe('Open stress-test items', () => {
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('spark --seed and dump refuse to overwrite an existing brief unless --force (as init does)', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+
+    const spark = runB2i(['spark', '--seed', 'env-diff', '--output', brief]);
+    assert.equal(spark.code, 1, spark.all);
+    assert.match(spark.all, /already exists.*--force/);
+    const dump = runB2i(['dump', '-', '--output', TMP_DIR], 'um so a tool that counts words in files');
+    assert.equal(dump.code, 1, dump.all);
+    assert.match(dump.all, /already exists.*--force/);
+    assert.equal(readFileSync(brief, 'utf8'), ODD_CASE_BRIEF, 'the existing brief is untouched');
+
+    const forced = runB2i(['spark', '--seed', 'env-diff', '--output', brief, '--force']);
+    assert.equal(forced.code, 0, forced.all);
+    assert.match(readFileSync(brief, 'utf8'), /# env-diff/);
+    const forcedDump = runB2i(['dump', '-', '--output', brief, '--force'], 'a tool that counts words in files');
+    assert.equal(forcedDump.code, 0, forcedDump.all);
+    assert.match(readFileSync(brief, 'utf8'), /# Draft Prototype/);
+  });
+
+  test('frontmatter after leading blank lines: check names the cause and --fix repairs it', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, `\n\n${ODD_CASE_BRIEF}`);
+    const res = runB2i(['check', brief]);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /frontmatter must start on line 1/);
+
+    const fixed = runB2i(['check', brief, '--fix']);
+    assert.equal(fixed.code, 0, fixed.all);
+    assert.match(fixed.all, /removed blank lines before the opening ---/);
+    assert.equal(readFileSync(brief, 'utf8'), ODD_CASE_BRIEF);
+  });
+
+  test('a duplicated required section fails check by name; other duplicates warn', () => {
+    const dupGoal = ODD_CASE_BRIEF.replace('## core flows', '## Goal\n- Second goal block\n\n## core flows');
+    const res = validateBrief(dupGoal);
+    assert.equal(res.ok, false, 'the first Goal block is not silently dropped');
+    assert.match(res.errors.join('\n'), /goal: duplicate ## Goal sections/);
+    assert.equal(res.total, 7);
+
+    const dupNotes = `${ODD_CASE_BRIEF}\n## Notes\n- a\n\n## notes\n- b\n`;
+    const notes = validateBrief(dupNotes);
+    assert.equal(notes.ok, true);
+    assert.match(notes.warnings.join('\n'), /duplicate ## notes section: only the last one is used/);
+    // ...and the last one really is the one kept, whatever its case.
+    assert.deepEqual(
+      Object.keys(notes.sections).filter((k) => /^notes$/i.test(k)).map((k) => notes.sections[k]),
+      ['- b']
+    );
+
+    const both = validateBrief(ODD_CASE_BRIEF.replace('## out of scope', '## Public API\n1. count(text)\n\n## out of scope'));
+    assert.equal(both.ok, false, 'Core flows and Public API together would drop one of them downstream');
+    assert.match(both.errors.join('\n'), /flows: both ## Core flows and ## Public API present/);
+  });
+
+  test('score: a lowercase "## public api" counts as the library API section', () => {
+    const lib = ODD_CASE_BRIEF.replace('template: cli', 'template: library')
+      .replace('## core flows\n1. Run wc on a file and print the count', '## public api\n1. Count words in a string');
+    const res = scoreBrief(lib);
+    assert.equal(res.ok, true);
+    assert.equal(res.categories.alignment.templateMismatch, null);
+  });
+
+  test('handoff --i2p <path to a .cmd> runs on Windows, with spaces, & and % in path and text', (t) => {
+    if (process.platform !== 'win32') {
+      t.skip('.cmd shims are Windows-only');
+      return;
+    }
+    // Spawned without a shell, Node refuses a .cmd (EINVAL); handoff now routes
+    // it through the same escaped cmd.exe line as the npx fallback.
+    const tools = join(TMP_DIR, 'my tools & co');
+    mkdirSync(tools);
+    const shim = join(tools, 'i2p.cmd');
+    writeFileSync(shim, `@node "${resolve('tests/fixtures/mock-i2p.mjs')}" %*\r\n`);
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF.replace('A tiny CLI that counts words', 'Counts 100% of %OS% words & more'));
+
+    const res = spawnSync(process.execPath, [B2I_CLI, 'handoff', 'proj', '--brief', brief, '--i2p', shim], {
+      encoding: 'utf8',
+      cwd: TMP_DIR,
+    });
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    assert.doesNotMatch(res.stderr, /DEP0190/, 'no shell-args deprecation warning');
+    const proto = readFileSync(join(TMP_DIR, 'proj', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /> Idea: Counts 100% of %OS% words & more/, 'the idea reached i2p literally');
+    assert.match(proto, /Count words in a file/, 'the brief was merged');
   });
 });

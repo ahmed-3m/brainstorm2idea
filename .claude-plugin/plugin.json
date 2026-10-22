@@ -1,0 +1,12 @@
+{
+  "name": "brainstorm2idea",
+  "version": "0.4.2",
+  "description": "Brainstorm2Idea — turn fuzzy ideas into machine-linted prototype briefs (b2i-brief@1) and hand off to idea2prototype.",
+  "author": {
+    "name": "ahmed-3m"
+  },
+  "homepage": "https://github.com/ahmed-3m/brainstorm2idea#readme",
+  "repository": "https://github.com/ahmed-3m/brainstorm2idea",
+  "license": "MIT",
+  "keywords": ["brainstorming", "ideation", "prototyping", "brief", "idea2prototype"]
+}

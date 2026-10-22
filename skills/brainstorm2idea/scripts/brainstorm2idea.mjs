@@ -52,7 +52,12 @@ export function validateBrief(content) {
   const warnings = [];
 
   const { meta, body } = parseFrontmatter(content);
-  const { title, sections } = parseSections(body);
+  const { title, sections, duplicates } = parseSections(body);
+  // A duplicated heading is ambiguous: only the last copy would be checked.
+  const duplicateOf = (pattern) => duplicates.find((d) => pattern.test(d));
+  // Frontmatter must open on line 1; after blank lines it is read as body text.
+  const frontmatterNotOnLine1 =
+    Object.keys(meta).length === 0 && /^﻿?(?:[ \t]*\r?\n)+---\r?\n/.test(String(content || ''));
 
   // Helper to find section case-insensitively
   function getSection(pattern) {
@@ -61,7 +66,9 @@ export function validateBrief(content) {
   }
 
   // 1. schema
-  if (!meta.schema) {
+  if (frontmatterNotOnLine1) {
+    errors.push('schema: frontmatter must start on line 1 (blank lines precede the opening ---; check --fix removes them)');
+  } else if (!meta.schema) {
     errors.push('schema: missing frontmatter schema (expected b2i-brief@1)');
   } else if (meta.schema !== SCHEMA_VERSION) {
     warnings.push(`schema drift: "${meta.schema}" differs from engine schema "${SCHEMA_VERSION}"`);
@@ -83,6 +90,8 @@ export function validateBrief(content) {
   const goalSec = getSection(/^Goal$/i);
   if (!goalSec) {
     errors.push('goal: missing ## Goal section');
+  } else if (duplicateOf(/^Goal$/i)) {
+    errors.push('goal: duplicate ## Goal sections (merge them into one)');
   } else {
     const bullets = (goalSec.content || '')
       .split(/\r?\n/)
@@ -99,6 +108,11 @@ export function validateBrief(content) {
   const flowsSec = getSection(/^(Core flows|Public API)$/i);
   if (!flowsSec) {
     errors.push('flows: missing ## Core flows section');
+  } else if (duplicateOf(/^(Core flows|Public API)$/i)) {
+    errors.push(`flows: duplicate ## ${flowsSec.key} sections (merge them into one)`);
+  } else if (Object.keys(sections).filter((k) => /^(Core flows|Public API)$/i.test(k)).length > 1) {
+    // Consumers read one flows section, so the other would be silently dropped.
+    errors.push('flows: both ## Core flows and ## Public API present (keep one)');
   } else {
     const numbered = (flowsSec.content || '')
       .split(/\r?\n/)
@@ -115,6 +129,8 @@ export function validateBrief(content) {
   const outOfScopeSec = getSection(/^Out of scope$/i);
   if (!outOfScopeSec) {
     errors.push('out-of-scope: missing ## Out of scope section');
+  } else if (duplicateOf(/^Out of scope$/i)) {
+    errors.push('out-of-scope: duplicate ## Out of scope sections (merge them into one)');
   } else {
     const bullets = (outOfScopeSec.content || '')
       .split(/\r?\n/)
@@ -134,6 +150,11 @@ export function validateBrief(content) {
   }
 
   // Soft Warnings
+  for (const d of duplicates) {
+    if (!/^(Goal|Core flows|Public API|Out of scope)$/i.test(d)) {
+      warnings.push(`duplicate ## ${d} section: only the last one is used`);
+    }
+  }
   const risksSec = getSection(/^(Risks & assumptions|Risks and assumptions)$/i);
   if (risksSec && risksSec.content) {
     const lines = risksSec.content
@@ -258,7 +279,7 @@ export function scoreBrief(content) {
     templateMismatch = 'template "cli" describes browser/DOM elements in flows';
     alignmentScore = Math.max(0, alignmentScore - 10);
   } else if (meta.template === 'library') {
-    const hasApiSection = Boolean(sections['Public API']);
+    const hasApiSection = Object.keys(sections).some((k) => /^Public API$/i.test(k));
     const hasApiKeywords = /\b(function|export|api|method|class|module)\b/i.test(flows);
     const hasFunctionSignatures = /\w+\s*\([^)]*\)/.test(flows);
     if (!hasApiSection && !hasApiKeywords && !hasFunctionSignatures) {
@@ -359,6 +380,13 @@ export function fixBrief(content) {
   const safe = String(content ?? '').replace(/^\uFEFF/, '');
   const eol = safe.includes('\r\n') ? '\r\n' : '\n';
   let text = safe;
+
+  // Frontmatter after blank lines is read as body text, so nothing parses.
+  const leading = text.match(/^(?:[ \t]*\r?\n)+(?=---\r?\n)/);
+  if (leading) {
+    text = text.slice(leading[0].length);
+    fixes.push('frontmatter: removed blank lines before the opening --- (it must start on line 1)');
+  }
 
   const fmMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (fmMatch) {
@@ -1400,6 +1428,21 @@ export function resolveBriefOutput(outputPath) {
   return resolved;
 }
 
+/**
+ * spark and dump, like init, never clobber an existing brief unless --force.
+ * `wx` makes the no-overwrite create atomic, so two concurrent writers can't
+ * both pass an existence check. Returns an error message, or null once written.
+ */
+function writeBriefNoClobber(path, content, force) {
+  try {
+    writeFileSync(path, content, { encoding: 'utf8', flag: force ? 'w' : 'wx' });
+    return null;
+  } catch (e) {
+    if (e.code === 'EEXIST') return `brief already exists at ${path} (pass --force to overwrite it)`;
+    throw e;
+  }
+}
+
 export function generateBriefFromSpark(spark) {
   const flowsHeader = spark.template === 'library' ? '## Public API' : '## Core flows';
   const goalsText = spark.goals.map((g) => `- ${g}`).join('\n');
@@ -1466,7 +1509,12 @@ export function cmdSpark(args) {
 
     if (outputPath) {
       const resolved = resolveBriefOutput(outputPath);
-      writeFileSync(resolved, briefMd, 'utf8');
+      const exists = writeBriefNoClobber(resolved, briefMd, args.includes('--force'));
+      if (exists) {
+        if (isJson) console.log(JSON.stringify({ ok: false, error: exists }, null, 2));
+        else console.error(`Brainstorm2idea spark — ${c.red('FAIL')}\n  ${exists}`);
+        return 1;
+      }
       if (isJson) {
         console.log(JSON.stringify({ ok: true, spark, path: resolved, content: briefMd }, null, 2));
       } else {
@@ -1543,6 +1591,15 @@ export function cmdSpark(args) {
 export function quoteCmdArg(arg) {
   const quoted = `"${String(arg).replace(/"/g, "'").replace(/(\\+)$/, '$1$1')}"`;
   return quoted.replace(/([()\][%!^"`<>&|;, *?=])/g, '^$1');
+}
+
+/**
+ * Escape the command itself (e.g. an --i2p path to a .cmd shim) for the same
+ * spawn. cmd resolves the program name after caret processing, so escaping —
+ * not quoting — keeps spaces and `&` in the path literal (as cross-spawn does).
+ */
+export function quoteCmdCommand(command) {
+  return String(command).replace(/([()\][%!^"`<>&|;, *?=])/g, '^$1');
 }
 
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
@@ -1794,11 +1851,15 @@ export function cmdHandoff(args) {
     return 0;
   }
 
-  // Execute scaffolding via child_process. On Windows, npx is a .cmd shim that
-  // can only be spawned through cmd.exe; Node then joins args unescaped, so
-  // brief text (name, distilled) must be quoted or `&`/`|` would run as commands.
-  const useShell = cmd === 'npx' && process.platform === 'win32';
-  const spawnRes = spawnSync(cmd, useShell ? cmdArgs.map(quoteCmdArg) : cmdArgs, { encoding: 'utf8', shell: useShell });
+  // Execute scaffolding via child_process. On Windows, npx (and any --i2p
+  // .cmd/.bat) is a batch shim that can only be spawned through cmd.exe; Node
+  // then joins args unescaped, so brief text (name, distilled) must be escaped
+  // or `&`/`|`/`%VAR%` would be interpreted by cmd.
+  const useShell = process.platform === 'win32' && (cmd === 'npx' || /\.(cmd|bat)$/i.test(cmd));
+  // One pre-escaped command line: Node 24 deprecates args alongside shell:true (DEP0190).
+  const spawnRes = useShell
+    ? spawnSync([quoteCmdCommand(cmd), ...cmdArgs.map(quoteCmdArg)].join(' '), { encoding: 'utf8', shell: true })
+    : spawnSync(cmd, cmdArgs, { encoding: 'utf8' });
 
   if (spawnRes.status !== 0) {
     const stderr = (spawnRes.stderr || spawnRes.stdout || '').trim();
@@ -2094,7 +2155,12 @@ distilled: "${distilled}"
 
   if (outputPath) {
     const resolvedOut = resolveBriefOutput(outputPath);
-    writeFileSync(resolvedOut, output, 'utf8');
+    const exists = writeBriefNoClobber(resolvedOut, output, args.includes('--force'));
+    if (exists) {
+      if (isJson) console.log(JSON.stringify({ ok: false, error: exists }, null, 2));
+      else console.error(`Brainstorm2idea dump — ${c.red('FAIL')}\n  ${exists}`);
+      return 1;
+    }
     if (isJson) {
       console.log(JSON.stringify({ ok: true, output: resolvedOut }, null, 2));
     } else {
@@ -2348,9 +2414,9 @@ function route(command, rest) {
       console.log(`\nUsage:`);
       console.log(`  b2i check [brief] [--fix] [--json]`);
       console.log(`  b2i score [brief] [--json]`);
-      console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--json]`);
+      console.log(`  b2i spark [category] [--seed <id>] [--output <path>] [--force] [--json]`);
       console.log(`  b2i export [brief] [--format prompt|issues|prd|json] [--output <path>] [--json]`);
-      console.log(`  b2i dump [file|-] [--output <path>] [--json]`);
+      console.log(`  b2i dump [file|-] [--output <path>] [--force] [--json]`);
       console.log(`  b2i init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]`);
       console.log(`  b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]`);
       console.log(`  b2i list [--json]`);

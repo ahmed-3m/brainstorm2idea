@@ -10,13 +10,36 @@ import {
   CLI_COMMANDS,
 } from '../skills/brainstorm2idea/scripts/brainstorm2idea.mjs';
 
+// CLI output is asserted as plain text: a FORCE_COLOR in the caller's
+// environment would otherwise leak into every spawned b2i.
+delete process.env.FORCE_COLOR;
+
 describe('Consistency Guards', () => {
-  test('VERSION matches package.json and .zcode-plugin/plugin.json', () => {
+  test('VERSION matches package.json and every plugin manifest', () => {
     const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
     assert.equal(pkg.version, VERSION, 'package.json version matches engine VERSION');
 
     const zcode = JSON.parse(readFileSync(resolve('.zcode-plugin/plugin.json'), 'utf8'));
     assert.equal(zcode.version, VERSION, '.zcode-plugin/plugin.json version matches engine VERSION');
+
+    const claude = JSON.parse(readFileSync(resolve('.claude-plugin/plugin.json'), 'utf8'));
+    assert.equal(claude.version, VERSION, '.claude-plugin/plugin.json version matches engine VERSION');
+
+    const market = JSON.parse(readFileSync(resolve('.claude-plugin/marketplace.json'), 'utf8'));
+    const entry = market.plugins.find((p) => p.name === claude.name);
+    assert.ok(entry, 'marketplace.json lists the plugin under its manifest name');
+    assert.equal(entry.source, './', 'the marketplace entry points at this repo root');
+    assert.equal(entry.version, VERSION, 'marketplace.json version matches engine VERSION');
+  });
+
+  test('agents/ holds only subagent definitions (Claude Code loads every .md there as an agent)', () => {
+    // Host guides once lived in agents/ and loaded as junk subagents named
+    // AGENTS and CLAUDE. They belong in hosts/.
+    if (!existsSync(resolve('agents'))) return;
+    for (const f of readdirSync(resolve('agents')).filter((n) => n.endsWith('.md'))) {
+      const text = readFileSync(resolve('agents', f), 'utf8');
+      assert.match(text, /^---\r?\n[\s\S]*?\bname:[\s\S]*?\r?\n---/, `agents/${f} has subagent frontmatter`);
+    }
   });
 
   test('command frontmatter values are YAML scalars (an unquoted [ or { breaks the whole block)', () => {
@@ -178,7 +201,9 @@ describe('Consistency Guards', () => {
       'skills/brainstorm2idea/scripts/ is published (engine + parser module)'
     );
     assert.ok(files.includes('skills/brainstorm2idea/SKILL.md'), 'SKILL.md is published');
-    assert.ok(files.includes('agents/'), 'agents/ is published');
+    assert.ok(files.includes('hosts/'), 'hosts/ (the AGENTS.md / CLAUDE.md host guides) is published');
+    assert.ok(files.includes('.claude-plugin/'), '.claude-plugin/ is published');
+    assert.ok(files.includes('.zcode-plugin/'), '.zcode-plugin/ is published');
     assert.ok(files.includes('commands/'), 'commands/ is published');
   });
 });

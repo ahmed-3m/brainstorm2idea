@@ -43,7 +43,7 @@ Do not invoke `node --test tests/` directly — the npm script pins the exact su
 3. **Schema stability.** `b2i-brief@1` and the 7 hard checks must not break. `VALID_TEMPLATES` (`web|api|cli|worker|library|none`) is the contract with `i2p new` — new idea archetypes belong in the `b2i spark` catalog, not in the template list.
 4. **Token discipline.** Compact verdicts; at most 3 failure notes per run; diff-sized edits.
 5. **Handoff safety.** Windows reserved-name/illegal-character guards on handoff dirs; the source brief is deleted only after a fully successful handoff.
-6. **Version consistency is test-enforced in 4 places.** When releasing, bump together: engine `VERSION`, `package.json`, `.zcode-plugin/plugin.json`, and `../marketplace.json`.
+6. **Version consistency is test-enforced.** When releasing, bump together: engine `VERSION`, `package.json`, `.zcode-plugin/plugin.json`, `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and (if present) `../marketplace.json`.
 
 ## Commit & PR conventions
 

@@ -10,6 +10,7 @@ import {
   scoreBrief,
   exportBrief,
   quoteCmdArg,
+  mergeSectionsIntoPrototype,
   generateBriefFromSpark,
   SPARK_CATALOG,
   SPARK_CATEGORIES,
@@ -440,5 +441,41 @@ distilled: Sticker shop
     assert.equal(quoteCmdArg('x & calc'), '"x & calc"');
     assert.equal(quoteCmdArg('say "hi" | more'), `"say 'hi' | more"`);
     assert.doesNotMatch(quoteCmdArg('a"&b').slice(1, -1), /"/, 'no interior quote can end the quoting');
+  });
+
+  test('a "## Goal" inside a fenced code block is not a section (an empty real Goal still fails)', () => {
+    const fenced = ODD_CASE_BRIEF.replace(
+      '## goal\n- Count words in a file\n',
+      '## Goal\n\n## Notes\n```md\n## Goal\n- example only\n```\n',
+    );
+    const { sections } = parseSections(parseFrontmatter(fenced).body);
+    assert.equal(sections.Goal, '');
+    assert.match(sections.Notes, /## Goal\n- example only/, 'fenced lines stay as content of the enclosing section');
+    assert.equal(validateBrief(fenced).ok, false);
+  });
+
+  test('frontmatter: interior quotes in a quoted value are kept, not truncated', () => {
+    const { meta } = parseFrontmatter('---\ndistilled: "Say "hi" now"\nname: \'it\'s\' # c\n---\n');
+    assert.equal(meta.distilled, 'Say "hi" now');
+    assert.equal(meta.name, "it's");
+  });
+
+  test('distilled length counts characters, not UTF-16 units (101 emoji pass, 201 fail)', () => {
+    const withDistilled = (d) => ODD_CASE_BRIEF.replace('distilled: A tiny CLI that counts words', `distilled: ${d}`);
+    assert.equal(validateBrief(withDistilled('🚀'.repeat(101))).ok, true);
+    const over = validateBrief(withDistilled('🚀'.repeat(201)));
+    assert.equal(over.ok, false);
+    assert.match(over.errors.join('\n'), /201 chars, max 200/);
+  });
+
+  test('i2p merge inserts brief text verbatim, even with String.replace patterns like $& and $$', () => {
+    const proto = '# P\n\n## Goal\n- TODO\n\n## Core flows\n1. TODO\n\n## Out of scope\n- TODO\n';
+    const sections = {
+      Goal: '- Cost is $$5 and $& stays',
+      'Core flows': "1. Echo $' and $1",
+      'Out of scope': '- $` nothing',
+    };
+    const merged = mergeSectionsIntoPrototype(proto, { sections });
+    for (const text of Object.values(sections)) assert.ok(merged.includes(text), `kept verbatim: ${text}`);
   });
 });

@@ -125,11 +125,12 @@ export function validateBrief(content) {
     }
   }
 
-  // 7. distilled (non-empty, <= 200 chars)
-  if (!meta.distilled || meta.distilled.trim().length === 0) {
+  // 7. distilled (non-empty, <= 200 chars — code points, so one emoji is one char)
+  const distilledLen = [...String(meta.distilled || '').trim()].length;
+  if (distilledLen === 0) {
     errors.push('distilled: missing or empty distilled one-liner in frontmatter');
-  } else if (meta.distilled.trim().length > 200) {
-    errors.push(`distilled: ${meta.distilled.trim().length} chars, max 200`);
+  } else if (distilledLen > 200) {
+    errors.push(`distilled: ${distilledLen} chars, max 200`);
   }
 
   // Soft Warnings
@@ -1548,21 +1549,22 @@ export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   const goalKey = Object.keys(sections).find((k) => /^Goal$/i.test(k));
   if (goalKey) {
     const goalRegex = /(##\s+Goal\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:[-*][\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(goalRegex, `$1${sections[goalKey]}\n`);
+    // Function replacers: brief text containing `$&` or `$$` must land verbatim.
+    text = text.replace(goalRegex, (_, head) => `${head}${sections[goalKey]}\n`);
   }
 
   // Replace Core flows (or Public API in library template)
   const flowsKey = Object.keys(sections).find((k) => /^(Core flows|Public API)$/i.test(k));
   if (flowsKey) {
     const flowsRegex = /(##\s+(?:Core flows|Public API)\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:\d+\.[\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(flowsRegex, `$1${sections[flowsKey]}\n`);
+    text = text.replace(flowsRegex, (_, head) => `${head}${sections[flowsKey]}\n`);
   }
 
   // Replace Out of scope
   const oosKey = Object.keys(sections).find((k) => /^Out of scope$/i.test(k));
   if (oosKey) {
     const oosRegex = /(##\s+Out of scope\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:[-*][\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(oosRegex, `$1${sections[oosKey]}\n`);
+    text = text.replace(oosRegex, (_, head) => `${head}${sections[oosKey]}\n`);
   }
 
   // Append Risks & assumptions if present
@@ -2058,7 +2060,7 @@ export function cmdDump(args) {
     .split(/[.!?]\s+/)
     .find((s) => s.trim().length > 10)
     ?.trim() || denoised.slice(0, 100);
-  const distilled = quoteFrontmatterValue(firstSentence).slice(0, 200);
+  const distilled = [...quoteFrontmatterValue(firstSentence)].slice(0, 200).join('');
 
   const draft = `---
 schema: ${SCHEMA_VERSION}
@@ -2144,7 +2146,7 @@ export function cmdInit(args) {
     else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
     return 1;
   }
-  const distilled = quoteFrontmatterValue(`${chosenTemplate} prototype for ${heading}`).slice(0, 200);
+  const distilled = [...quoteFrontmatterValue(`${chosenTemplate} prototype for ${heading}`)].slice(0, 200).join('');
   const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
 
   const briefMd = `---

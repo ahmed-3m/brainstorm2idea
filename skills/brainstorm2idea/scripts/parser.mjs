@@ -29,8 +29,10 @@ export function parseFrontmatter(content) {
     // Strip inline comments only when outside quotes
     if (val.startsWith('"') || val.startsWith("'")) {
       const quoteChar = val[0];
-      const endQuoteIdx = val.indexOf(quoteChar, 1);
-      if (endQuoteIdx !== -1) {
+      // The closing quote is the last one, so `"Say "hi" now"` keeps its
+      // interior quotes instead of silently truncating to `Say `.
+      const endQuoteIdx = val.lastIndexOf(quoteChar);
+      if (endQuoteIdx > 0) {
         val = val.slice(1, endQuoteIdx);
       } else {
         val = val.slice(1);
@@ -55,8 +57,21 @@ export function parseSections(body) {
   const sections = {};
   let currentSection = null;
   let currentContent = [];
+  // A `## Goal` inside a fenced code block is example text, not a section.
+  let fence = null;
 
   for (const line of lines) {
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (!fence) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+    }
+    if (fence || fenceMatch) {
+      if (currentSection) currentContent.push(line);
+      continue;
+    }
+
     const h1Match = line.match(/^#\s+(.+)$/);
     if (h1Match && !title) {
       title = h1Match[1].trim();

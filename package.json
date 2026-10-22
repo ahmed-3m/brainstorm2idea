@@ -1,6 +1,6 @@
 {
   "name": "@ahmed-3m/brainstorm2idea",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Turn fuzzy ideas into machine-linted prototype briefs and hand off to idea2prototype.",
   "type": "module",
   "main": "./skills/brainstorm2idea/scripts/brainstorm2idea.mjs",

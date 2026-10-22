@@ -12,7 +12,7 @@ export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValu
 export { SCHEMA_VERSION, VALID_TEMPLATES } from './constants.mjs';
 export { SPARK_CATEGORIES, SPARK_CATALOG, generateBriefFromSpark } from './sparks.mjs';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.5.1';
 
 // Every CLI command the router accepts. Kept in sync with the router switch
 // and asserted against SKILL.md / AGENTS.md by the consistency test suite.
@@ -883,11 +883,14 @@ export function introspectI2pTemplates(i2pInvocation) {
     const { cmd, cmdArgs = [] } = i2pInvocation;
     const fullArgs = [...cmdArgs, 'list', '--json'];
 
-    // B2I_INTROSPECT_TIMEOUT_MS: test-only knob for introspection timeout (default: 15000ms)
+    // B2I_INTROSPECT_TIMEOUT_MS: test-only knob for introspection timeout
+    // (default 45000ms — a cold `npx -y @latest` fetch on Windows can exceed
+    // 15s, and timing out there needlessly downgrades the first handoff to
+    // the pinned fallback; network errors like ENOTFOUND still fail fast).
     const timeoutEnv = process.env.B2I_INTROSPECT_TIMEOUT_MS;
     const timeout = (timeoutEnv !== undefined && Number.isFinite(Number(timeoutEnv)))
       ? Math.max(1, Number(timeoutEnv))
-      : 15000;
+      : 45000;
 
     const useShell = process.platform === 'win32' && (cmd === 'npx' || /\.(cmd|bat)$/i.test(cmd));
     const spawnOpts = { encoding: 'utf8', timeout };

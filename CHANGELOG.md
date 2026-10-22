@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v0.5.1] — 2026-10-23
+
+### Fixed
+- Live i2p introspection default timeout raised 15s → 45s: a cold `npx -y @ahmed-3m/idea2prototype@latest` fetch (notably on Windows) could exceed 15s and needlessly downgrade the first handoff to the pinned fallback (`B2I_INTROSPECT_TIMEOUT_MS` still overrides; offline DNS errors fail fast, unchanged).
+
 ## [v0.5.0] — 2026-10-23
 
 ### Added
@@ -127,7 +132,8 @@
 - `b2i list [--json]` — print schema version and supported templates.
 - Zero npm dependencies; pure Node.js (`node:fs`, `node:path`, `node:child_process`, `node:test`).
 
-[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.5.1...HEAD
+[v0.5.1]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.5.0...v0.5.1
 [v0.5.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.3...v0.5.0
 [v0.4.3]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...v0.4.2

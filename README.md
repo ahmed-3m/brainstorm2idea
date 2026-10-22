@@ -4,7 +4,7 @@
 
 <img src="./assets/readme/demo.svg" width="100%" alt="Animated terminal demo: b2i init scaffolds brief.md, fill in the TODOs, b2i check passes 7/7, b2i scores 100/100 Grade A, b2i handoff scaffolds plant-pulse/PROTOTYPE.md">
 
-[![npm pending publish](https://img.shields.io/badge/npm-v0.4.x%20pending%20publish-F59E0B)](https://www.npmjs.com/package/@ahmed-3m/brainstorm2idea)
+[![npm version](https://img.shields.io/npm/v/@ahmed-3m/brainstorm2idea)](https://www.npmjs.com/package/@ahmed-3m/brainstorm2idea)
 [![CI](https://github.com/ahmed-3m/brainstorm2idea/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmed-3m/brainstorm2idea/actions/workflows/ci.yml)
 [![zero dependencies](https://img.shields.io/badge/dependencies-zero-34D399)](package.json)
 [![node ≥ 18.17](https://img.shields.io/badge/node-%E2%89%A5%2018.17-9CA3AF)](package.json)

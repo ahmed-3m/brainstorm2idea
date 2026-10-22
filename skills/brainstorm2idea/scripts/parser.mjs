@@ -90,8 +90,10 @@ export function extractListItems(text) {
   return text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => /^[-*]\s+|\d+[.)]\s+/.test(l))
-    .map((l) => l.replace(/^[-*]\s+|\d+[.)]\s+/, '').trim())
+    // Same bullet set `check` accepts (- * +); anchored so prose like
+    // "see step 2. below" is not mistaken for a numbered item.
+    .filter((l) => /^(?:[-*+]|\d+[.)])\s+/.test(l))
+    .map((l) => l.replace(/^(?:[-*+]|\d+[.)])\s+/, '').trim())
     .filter(Boolean);
 }
 

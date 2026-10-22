@@ -59,6 +59,15 @@ jobs:
           test "$(node "$BIN" --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
           node "$BIN" list
 
+      - name: Run the npm-linked bin (the path npx and global installs use)
+        # npm links bins as bare symlinks on POSIX (`.bin/b2i` -> bin/b2i.mjs).
+        # v0.4.2 shipped a bin that silently exited 0 through that symlink.
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          test "$(node_modules/.bin/b2i --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
+          printf 'garbage\n' > garbage.md
+          if node_modules/.bin/b2i check garbage.md; then echo "b2i check must fail on a garbage brief"; exit 1; fi
+
       - name: Lint a brief through the installed binary
         run: |
           cd "$RUNNER_TEMP/smoke"

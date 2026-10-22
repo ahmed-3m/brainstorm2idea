@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, rmSync, symlinkSync, chmodSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -8,6 +8,8 @@ import {
   parseSections,
   validateBrief,
   scoreBrief,
+  exportBrief,
+  quoteCmdArg,
   generateBriefFromSpark,
   SPARK_CATALOG,
   SPARK_CATEGORIES,
@@ -246,5 +248,197 @@ distilled: Safe handoff
     const fileContent = readFileSync(targetBrief, 'utf8');
     const checkRes = validateBrief(fileContent);
     assert.equal(checkRes.ok, true, 'seeded brief on disk passes 7/7 validation');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Marketplace-readiness regressions (docs/evals/2026-10-22-stress-and-efficacy.md).
+// Each test reproduces a bug found in the published v0.4.2.
+// ---------------------------------------------------------------------------
+
+const ENGINE = resolve('skills/brainstorm2idea/scripts/brainstorm2idea.mjs');
+const runNode = (args, input = null) => {
+  const res = spawnSync(process.execPath, args, { encoding: 'utf8', input: input ?? undefined });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', all: (res.stdout || '') + (res.stderr || '') };
+};
+const ODD_CASE_BRIEF = `---
+schema: b2i-brief@1
+template: cli
+distilled: A tiny CLI that counts words
+---
+# WordCount
+
+## goal
+- Count words in a file
+
+## core flows
+1. Run wc on a file and print the count
+
+## out of scope
+- GUI
+`;
+const NO_STACK = /node:internal|node:fs|^\s+at /m;
+
+describe('Marketplace-readiness regressions', () => {
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('npm POSIX bin layout: a symlink named `b2i` runs the CLI (was a silent exit-0 no-op)', (t) => {
+    const link = join(TMP_DIR, 'b2i');
+    try {
+      symlinkSync(B2I_CLI, link, 'file');
+    } catch (err) {
+      t.skip(`cannot create symlinks here (${err.code})`);
+      return;
+    }
+    const version = runNode([link, '--version']);
+    assert.equal(version.code, 0);
+    assert.equal(version.stdout.trim(), VERSION);
+
+    const garbage = join(TMP_DIR, 'garbage.md');
+    writeFileSync(garbage, 'garbage\n');
+    const check = runNode([link, 'check', garbage]);
+    assert.equal(check.code, 1, 'an invalid brief must fail through the symlinked bin');
+    assert.match(check.stdout, /FAIL/);
+  });
+
+  test('engine script still runs directly (the path SKILL.md documents) and exactly once', () => {
+    const res = runNode([ENGINE, '--version']);
+    assert.equal(res.code, 0);
+    assert.equal(res.stdout.trim(), VERSION, 'printed once, not twice');
+  });
+
+  test('a directory where a file is expected fails cleanly, no stack trace', () => {
+    const dir = join(TMP_DIR, 'adir');
+    mkdirSync(dir);
+    for (const cmd of ['check', 'score', 'export', 'dump']) {
+      const res = runB2i([cmd, dir]);
+      assert.equal(res.code, 1, `${cmd} on a directory exits 1`);
+      assert.match(res.all, /FAIL/, `${cmd} prints a FAIL verdict`);
+      assert.match(res.all, /directory/);
+      assert.doesNotMatch(res.all, NO_STACK, `${cmd} must not print a stack trace`);
+    }
+    const json = runB2i(['check', dir, '--json']);
+    assert.equal(json.code, 1);
+    assert.equal(JSON.parse(json.stdout).ok, false, '--json still emits parseable JSON');
+  });
+
+  test('--output into a missing parent directory fails cleanly', () => {
+    const res = runB2i(['dump', '-', '--output', join(TMP_DIR, 'nope', 'brief.md')], 'um so a todo app');
+    assert.equal(res.code, 1);
+    assert.match(res.all, /FAIL[\s\S]*no such file or directory/);
+    assert.doesNotMatch(res.all, NO_STACK);
+  });
+
+  test('check --fix on a read-only brief fails cleanly instead of crashing', () => {
+    const brief = join(TMP_DIR, 'ro.md');
+    writeFileSync(brief, ODD_CASE_BRIEF.replace('schema: b2i-brief@1\n', ''));
+    chmodSync(brief, 0o444);
+    try {
+      const res = runB2i(['check', brief, '--fix']);
+      assert.equal(res.code, 1);
+      assert.match(res.all, /permission denied|read-only/i);
+      assert.doesNotMatch(res.all, NO_STACK);
+    } finally {
+      chmodSync(brief, 0o644);
+    }
+  });
+
+  test('spark --seed <id> --output <existing dir> writes <dir>/brief.md (as the help text advertises)', () => {
+    const res = runB2i(['spark', '--seed', 'env-diff', '--output', TMP_DIR]);
+    assert.equal(res.code, 0, res.all);
+    assert.equal(validateBrief(readFileSync(join(TMP_DIR, 'brief.md'), 'utf8')).ok, true);
+  });
+
+  test('handoff --target raw keeps section content when headings are lowercase', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    assert.equal(validateBrief(ODD_CASE_BRIEF).ok, true, 'check accepts lowercase headings');
+    const res = runB2i(['handoff', join(TMP_DIR, 'proj'), '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 0, res.all);
+    const proto = readFileSync(join(TMP_DIR, 'proj', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /## Goal\n- Count words in a file/);
+    assert.match(proto, /## Core flows\n1\. Run wc on a file/);
+    assert.match(proto, /## Out of scope\n- GUI/);
+  });
+
+  test('handoff --target raw refuses to overwrite an existing PROTOTYPE.md and keeps the brief', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    const proj = join(TMP_DIR, 'proj');
+    mkdirSync(proj);
+    writeFileSync(join(proj, 'PROTOTYPE.md'), 'hand-written spec\n');
+    const res = runB2i(['handoff', proj, '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /already exists/);
+    assert.equal(readFileSync(join(proj, 'PROTOTYPE.md'), 'utf8'), 'hand-written spec\n');
+    assert.ok(existsSync(brief), 'brief is not consumed by a refused handoff');
+  });
+
+  test('handoff rejects an unknown --target instead of silently using i2p', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    const res = runB2i(['handoff', join(TMP_DIR, 'proj'), '--target', 'rwa', '--brief', brief, '--dry-run']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /unknown --target "rwa"/);
+  });
+
+  test('export keeps + bullets that check accepts, and ignores prose that merely contains "2. "', () => {
+    const brief = ODD_CASE_BRIEF
+      .replace('- Count words in a file', '+ Count words in a file')
+      .replace('## out of scope\n- GUI', '## out of scope\n- GUI\nSee step 2. for details');
+    assert.equal(validateBrief(brief).ok, true);
+    const parsed = JSON.parse(exportBrief(brief, { format: 'json' }));
+    assert.deepEqual(parsed.goals, ['Count words in a file']);
+    assert.deepEqual(parsed.outOfScope, ['GUI']);
+  });
+
+  test('score --json exits 1 on an invalid brief, like plain score', () => {
+    const bad = join(TMP_DIR, 'bad.md');
+    writeFileSync(bad, 'garbage\n');
+    assert.equal(runB2i(['score', bad]).code, 1);
+    const json = runB2i(['score', bad, '--json']);
+    assert.equal(json.code, 1);
+    assert.equal(JSON.parse(json.stdout).ok, false);
+  });
+
+  test('score: a rabbit hole in Core flows is not "mitigated" by a synonym in Out of scope', () => {
+    const leaked = `---
+schema: b2i-brief@1
+template: web
+distilled: Sticker shop
+---
+# Shop
+
+## Goal
+- Sell stickers online
+
+## Core flows
+1. Pay for the cart with Stripe checkout
+2. Sign in with Google OAuth to see order history
+
+## Out of scope
+- PayPal payments
+- SAML enterprise SSO
+
+## Risks & assumptions
+- RISK: none
+`;
+    const result = scoreBrief(leaked);
+    assert.deepEqual(result.categories.rabbitHoles.detected.map((d) => d.label), ['OAuth/SSO', 'Payment gateway']);
+    assert.deepEqual(result.categories.rabbitHoles.mitigated, []);
+    assert.equal(result.breakdown.rabbitHoles, 10, '40 - 2 x 15');
+  });
+
+  test('quoteCmdArg neutralises cmd.exe metacharacters for the Windows npx fallback', () => {
+    assert.equal(quoteCmdArg('x & calc'), '"x & calc"');
+    assert.equal(quoteCmdArg('say "hi" | more'), `"say 'hi' | more"`);
+    assert.doesNotMatch(quoteCmdArg('a"&b').slice(1, -1), /"/, 'no interior quote can end the quoting');
   });
 });

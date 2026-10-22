@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- First-class programmatic API via package.json `exports` map and `main`: root import now resolves to the engine; `./parser`, `./sparks`, and `./constants` subpaths; `./skills/*` wildcard preserves deep imports; CI smoke now imports the installed package.
 - Live idea2prototype template introspection in `b2i handoff`: queries `i2p list --json` before scaffolding to accept newly released templates without engine upgrades, while gracefully falling back to the pinned template set offline or on custom commands (`B2I_INTROSPECT_TIMEOUT_MS` knob for testing).
 
 ### Changed

@@ -127,6 +127,18 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 - **Rabbit-hole immunity (40 pts)** — detects high-risk patterns (`auth`, `payments`, `multi-tenant`, `crypto/blockchain`, `custom ML training`, `native apps`, `real-time video/audio`). Marked in `## Out of scope` → safely mitigated; left in `## Core flows` → advisory deduction.
 - **Template fit (30 pts)** — concise goals, demoable flows, explicit `ASSUMPTION:` / `RISK:` tags.
 
+## Programmatic API
+
+```js
+import { validateBrief, scoreBrief, fixBrief, exportBrief } from '@ahmed-3m/brainstorm2idea';
+
+const validation = validateBrief(briefMarkdown);
+const { score, grade } = scoreBrief(briefMarkdown);
+console.log(`Doability: ${score}/100 (${grade})`);
+```
+
+Subpath exports are also available for `./parser`, `./sparks`, and `./constants`, with zero external dependencies and pure ESM throughout.
+
 ## Why not X?
 
 | Dimension | `b2i` | `/grill-me` | GitHub Spec Kit | BMAD-METHOD |

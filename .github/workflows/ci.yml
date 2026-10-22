@@ -99,6 +99,11 @@ jobs:
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/constants.mjs"
           test -f "$RUNNER_TEMP/smoke/node_modules/@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/SKILL.md"
 
+      - name: Import the package programmatically
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          node --input-type=module -e "const m = await import('@ahmed-3m/brainstorm2idea'); if (!m.validateBrief || !m.scoreBrief || !m.fixBrief || !m.exportBrief || m.SCHEMA_VERSION !== 'b2i-brief@1') process.exit(1); const p = await import('@ahmed-3m/brainstorm2idea/skills/brainstorm2idea/scripts/parser.mjs'); if (!p.parseFrontmatter) process.exit(1); console.log('programmatic-api-ok');"
+
   i2p-contract:
     # Cross-repo contract guard: feeds REAL `b2i handoff` output into the
     # PUBLISHED @ahmed-3m/idea2prototype (npx @latest — the exact default

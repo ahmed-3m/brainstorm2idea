@@ -210,4 +210,17 @@ describe('Consistency Guards', () => {
     assert.ok(files.includes('.zcode-plugin/'), '.zcode-plugin/ is published');
     assert.ok(files.includes('commands/'), 'commands/ is published');
   });
+
+  test('package.json exports targets exist', () => {
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+    assert.ok(pkg.exports, 'package.json defines exports map');
+    for (const [entry, target] of Object.entries(pkg.exports)) {
+      if (target.includes('*')) {
+        const prefixDir = target.slice(0, target.indexOf('*'));
+        assert.ok(existsSync(resolve(prefixDir)), `exports "${entry}" prefix directory exists: ${prefixDir}`);
+      } else {
+        assert.ok(existsSync(resolve(target)), `exports "${entry}" target file exists: ${target}`);
+      }
+    }
+  });
 });

@@ -3,6 +3,15 @@
   "version": "0.4.3",
   "description": "Turn fuzzy ideas into machine-linted prototype briefs and hand off to idea2prototype.",
   "type": "module",
+  "main": "./skills/brainstorm2idea/scripts/brainstorm2idea.mjs",
+  "exports": {
+    ".": "./skills/brainstorm2idea/scripts/brainstorm2idea.mjs",
+    "./parser": "./skills/brainstorm2idea/scripts/parser.mjs",
+    "./sparks": "./skills/brainstorm2idea/scripts/sparks.mjs",
+    "./constants": "./skills/brainstorm2idea/scripts/constants.mjs",
+    "./skills/*": "./skills/*",
+    "./package.json": "./package.json"
+  },
   "license": "MIT",
   "author": "ahmed-3m",
   "repository": {

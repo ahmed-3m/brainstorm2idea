@@ -13,7 +13,7 @@
 - `score` reported OAuth or a payment gateway used in Core flows as "Mitigated" when a related term appeared in Out of scope (a 100/100 for a brief that builds the rabbit hole).
 - Parser: `export` dropped `+` bullets and treated prose containing "2. " as a list item; a `## Goal` inside a fenced code block counted as the Goal section; a quoted frontmatter value was cut at its first interior quote; `distilled` length counted UTF-16 units, so 101 emoji failed the 200-char limit.
 - Windows: the npx fallback in `handoff` passed arguments to `cmd.exe` unquoted.
-- `/b2i-export` frontmatter was invalid YAML (`argument-hint: [--format a|b]`), so Claude Code dropped its description and hint. Command docs now use `b2i` consistently (defined in SKILL.md as shorthand for the bundled script), and `/b2i-dump`'s score threshold matches the skill (≥ 70).
+- `/b2i-export` frontmatter was invalid YAML (`argument-hint: [--format a|b]`), so Claude Code dropped its description and hint. Command docs now use `b2i` consistently (defined in SKILL.md as shorthand for the bundled script), and `/b2i-dump` and SKILL.md now agree with the scorer that grade B means ≥ 80 (SKILL.md said 70).
 
 ## [v0.4.2] — 2026-10-22
 

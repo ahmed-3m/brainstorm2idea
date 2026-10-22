@@ -70,7 +70,7 @@ When the user triggers `/b2i-dump` or pastes an unformatted voice memo, audio tr
 2. **Extract the Core Hook:** Identify the single user problem and the minimal viable solution.
 3. **Quarantine Scope Creep:** Immediately move multi-tenancy, payments, auth, mobile apps, or complex infrastructure to `## Out of scope`.
 4. **Draft Immediately (Zero-Question Mode):** Do not grill the user with questions if the transcript contains enough signal. Produce a complete `b2i-brief@1` draft immediately, using `ASSUMPTION:` tags for inferred choices.
-5. **Score Check:** Verify that `b2i score` would rate it ≥ B (≥ 70/100) before presenting.
+5. **Score Check:** Verify that `b2i score` would rate it ≥ B (≥ 80/100) before presenting.
 
 ### Idea Discovery & Spark Protocol (`/b2i-spark`)
 When the user has no idea, asks what to build, or seeks inspiration ("I don't know what to build", "Give me an idea for a CLI tool"):

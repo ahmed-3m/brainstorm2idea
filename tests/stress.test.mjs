@@ -437,10 +437,36 @@ distilled: Sticker shop
     assert.equal(result.breakdown.rabbitHoles, 10, '40 - 2 x 15');
   });
 
-  test('quoteCmdArg neutralises cmd.exe metacharacters for the Windows npx fallback', () => {
-    assert.equal(quoteCmdArg('x & calc'), '"x & calc"');
-    assert.equal(quoteCmdArg('say "hi" | more'), `"say 'hi' | more"`);
-    assert.doesNotMatch(quoteCmdArg('a"&b').slice(1, -1), /"/, 'no interior quote can end the quoting');
+  test('quoteCmdArg caret-escapes cmd metacharacters, % included, and doubles trailing backslashes', () => {
+    assert.equal(quoteCmdArg('100%'), '^"100^%^"');
+    assert.equal(quoteCmdArg('C:\\work\\'), '^"C:\\work\\\\^"');
+    assert.equal(quoteCmdArg('say "hi"'), `^"say^ 'hi'^"`);
+  });
+
+  test('quoteCmdArg: a real cmd.exe shim receives every argument literally (Windows npx fallback)', (t) => {
+    if (process.platform !== 'win32') {
+      t.skip('cmd.exe is Windows-only');
+      return;
+    }
+    // Spawned exactly like handoff's fallback: spawnSync('npx', args.map(quoteCmdArg), { shell: true }).
+    const shim = join(TMP_DIR, 'shim');
+    mkdirSync(shim);
+    writeFileSync(join(shim, 'argv.js'), 'console.log(JSON.stringify(process.argv.slice(2)));\n');
+    writeFileSync(join(shim, 'npx.cmd'), '@node "%~dp0argv.js" %*\r\n');
+    const args = [
+      'new', 'C:\\work\\', '--template', 'cli',
+      '--idea', 'save 100% and use %OS%',
+      'see %B2I_INJECT% end',
+      'a & b | c > d < e ^ f ( g ) !h!',
+      'C:\\my dir\\sub\\',
+    ];
+    const res = spawnSync('npx', args.map(quoteCmdArg), {
+      encoding: 'utf8',
+      shell: true,
+      env: { ...process.env, PATH: `${shim};${process.env.PATH}`, B2I_INJECT: 'a" & echo INJECTED' },
+    });
+    // One JSON line: an expanded %B2I_INJECT% would close the quote and run `echo INJECTED`.
+    assert.deepEqual(JSON.parse(res.stdout.trim()), args, res.stdout + res.stderr);
   });
 
   test('a "## Goal" inside a fenced code block is not a section (an empty real Goal still fails)', () => {
@@ -452,12 +478,27 @@ distilled: Sticker shop
     assert.equal(sections.Goal, '');
     assert.match(sections.Notes, /## Goal\n- example only/, 'fenced lines stay as content of the enclosing section');
     assert.equal(validateBrief(fenced).ok, false);
+
+    // A line like "```md" inside an open fence is content, not a closer (CommonMark).
+    const nested = ODD_CASE_BRIEF.replace(
+      '## out of scope',
+      '## Notes\n```\n```md\n## Goal\n- example only\n```\n```\n\n## out of scope',
+    );
+    const nestedSections = parseSections(parseFrontmatter(nested).body).sections;
+    assert.equal(nestedSections.goal, '- Count words in a file', 'the real Goal survives');
+    assert.match(nestedSections.Notes, /## Goal\n- example only/);
   });
+
 
   test('frontmatter: interior quotes in a quoted value are kept, not truncated', () => {
     const { meta } = parseFrontmatter('---\ndistilled: "Say "hi" now"\nname: \'it\'s\' # c\n---\n');
     assert.equal(meta.distilled, 'Say "hi" now');
     assert.equal(meta.name, "it's");
+    // A comment that itself contains the quote character is still a comment.
+    const commented = parseFrontmatter(
+      '---\na: "hello" # the "wc" tool\nb: \'ship it\' # it\'s a prototype\nc: "Say "hi" now" # note\n---\n',
+    ).meta;
+    assert.deepEqual(commented, { a: 'hello', b: 'ship it', c: 'Say "hi" now' });
   });
 
   test('distilled length counts characters, not UTF-16 units (101 emoji pass, 201 fail)', () => {

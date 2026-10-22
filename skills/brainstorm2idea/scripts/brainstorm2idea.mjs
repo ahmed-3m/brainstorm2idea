@@ -1533,12 +1533,16 @@ export function cmdSpark(args) {
 }
 
 /**
- * Quote one argument for a cmd.exe command line. Inside double quotes cmd
- * treats & | < > ^ ( ) literally; an interior `"` would end the quoting, so it
- * is replaced (the same substitution quoteFrontmatterValue makes).
+ * Escape one argument for a `shell: true` spawn on Windows (cmd.exe /d /s /c).
+ * Double quotes alone are not enough: cmd still expands %VAR% inside them, and
+ * a trailing backslash escapes the closing quote for the child's argv parser.
+ * So: replace interior `"` (as quoteFrontmatterValue does), double trailing
+ * backslashes, quote, then caret-escape every cmd metacharacter — quotes and
+ * % included — so cmd passes the whole argument through literally.
  */
 export function quoteCmdArg(arg) {
-  return `"${String(arg).replace(/"/g, "'")}"`;
+  const quoted = `"${String(arg).replace(/"/g, "'").replace(/(\\+)$/, '$1$1')}"`;
+  return quoted.replace(/([()\][%!^"`<>&|;, *?=])/g, '^$1');
 }
 
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {

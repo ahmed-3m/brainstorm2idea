@@ -60,7 +60,7 @@ I checked each of these by hand.
 | 11 | Low | `export` dropped `+` bullets (which `check` accepts). It also matched `2. ` mid-sentence as a list item. | Anchored bullet regex: `- * +` and `1.` / `1)`. |
 | 12 | Low | `distilled: "Say "hi" now"` read back as `Say ` and `check` passed. `--fix` never ran, because it only fixes failing briefs. | The closing quote is the last one. |
 | 13 | Low | `distilled` length counted UTF-16 units, so 101 emoji failed the 200-char limit. `dump` and `init` could also cut a surrogate pair in half. | Counts and truncates by code point. |
-| 14 | Low (Windows) | When `npx-cli.js` isn't next to `node`, handoff's fallback spawned `npx.cmd` with `shell:true` and unquoted arguments, so `&` or `|` in a path were interpreted by `cmd.exe`. | `quoteCmdArg` on that path only. |
+| 14 | Low (Windows) | When `npx-cli.js` isn't next to `node`, handoff's fallback spawned `npx.cmd` with `shell:true` and unquoted arguments, so `&` or `|` in a path were interpreted by `cmd.exe`. | `quoteCmdArg` on that path only: it caret-escapes every cmd metacharacter (including `%`) and doubles trailing backslashes. A test spawns a real `.cmd` shim. The first version, which only quoted, still expanded `%VAR%` (an injection) and let a trailing `\` swallow later flags. Grok's review of this PR caught that. |
 | 15 | Medium (plugin) | `commands/b2i-export.md` frontmatter is invalid YAML (`argument-hint: [--format prompt\|issues\|prd\|json]`). `claude plugin validate` reports an error, and Claude Code loads `/b2i-export` with its description and hint dropped. | Quoted. A consistency guard rejects unquoted `[` or `{` values. |
 | 16 | Low (agent flow) | The commands mixed repo-relative `node bin/b2i.mjs` (wrong for plugin installs) with bare `b2i` (not on PATH for skill installs). `/b2i-dump` asked for a score ≥ 80 while the skill says ≥ 70. `/b2i-spark` hard-coded "Doability rating: 100/100". `ask_question` is one host's tool name. | The commands use `b2i` throughout. SKILL.md defines it as shorthand for the bundled `node "<skill-base>/scripts/brainstorm2idea.mjs"`. The other text was aligned. |
 
@@ -74,7 +74,7 @@ Tests: `npm test` gives 137 tests. On Windows with Node 24 and Node 18.17, 136 p
 | Frontmatter must start at byte 0 (after an optional BOM). With a leading blank line, `check` reports "missing schema/template/distilled" although all three are present, and `--fix` repairs nothing. | Rare, but the message misleads. Proposal: have `--fix` strip leading blank lines, or have `check` say "frontmatter must start on line 1". |
 | Duplicate `## Goal` sections: the last one wins without a warning (an empty second `## Goal` fails a valid brief). | Proposal: a `check` error naming the duplicate. |
 | `score`'s library-template mismatch check uses case-sensitive `sections['Public API']`. | Advisory score only. Same one-line fix as #2. |
-| `handoff --i2p <path>` to a non-`.mjs` `.cmd` on Windows goes through `shell:true`. | It's the user's own path. It's now quoted (#14), but still runs through a shell. |
+| `handoff --i2p <path-to-a-.cmd>` on Windows does not run. It spawns without a shell, and Node refuses `.cmd` files that way (`EINVAL`). | Point `--i2p` at the `.mjs`/`.js` entry, which works. Proposal: route a `.cmd` path through the same escaped shell path as the npx fallback (#14). |
 | Path traversal in `--output` and `handoff <dir>` (`../../x`). | Intended: the tool writes where the user points it. Agents should pass paths the user named. |
 
 ### Agent-flow notes (SKILL.md and commands)

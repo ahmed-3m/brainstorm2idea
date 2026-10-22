@@ -29,9 +29,15 @@ export function parseFrontmatter(content) {
     // Strip inline comments only when outside quotes
     if (val.startsWith('"') || val.startsWith("'")) {
       const quoteChar = val[0];
-      // The closing quote is the last one, so `"Say "hi" now"` keeps its
-      // interior quotes instead of silently truncating to `Say `.
-      const endQuoteIdx = val.lastIndexOf(quoteChar);
+      // The closing quote is the first one followed only by nothing or a
+      // `# comment`, so `"Say "hi" now"` keeps its interior quotes and
+      // `"x" # the "wc" tool` still drops the comment.
+      let endQuoteIdx = -1;
+      for (let i = val.indexOf(quoteChar, 1); i !== -1; i = val.indexOf(quoteChar, i + 1)) {
+        const rest = val.slice(i + 1).trim();
+        if (rest === '' || rest.startsWith('#')) { endQuoteIdx = i; break; }
+      }
+      if (endQuoteIdx === -1) endQuoteIdx = val.lastIndexOf(quoteChar);
       if (endQuoteIdx > 0) {
         val = val.slice(1, endQuoteIdx);
       } else {
@@ -58,14 +64,16 @@ export function parseSections(body) {
   let currentSection = null;
   let currentContent = [];
   // A `## Goal` inside a fenced code block is example text, not a section.
+  // CommonMark: a fence closes only on a bare marker of the same character, at
+  // least as long; "```md" inside an open fence is content, not a closer.
   let fence = null;
 
   for (const line of lines) {
-    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (fenceMatch) {
-      const marker = fenceMatch[1];
+      const [, marker, rest] = fenceMatch;
       if (!fence) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      else if (marker[0] === fence[0] && marker.length >= fence.length && /^[ \t]*$/.test(rest)) fence = null;
     }
     if (fence || fenceMatch) {
       if (currentSection) currentContent.push(line);

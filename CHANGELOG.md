@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.4.2] — 2026-10-22
+
 ### Added
 - Six new `b2i spark` archetypes (24 → 30), covering the most requested starter shapes: `link-grabber` (browser extension), `csv-cleaner`, `flashcard-forge`, `discord-standup` (chat bot worker), `site-diff-scraper`, and `terminal-snake`. All pass `b2i check` 7/7 and score 100/100; the `b2i-brief@1` template set (`web|api|cli|worker|library|none`) is unchanged — it stays coupled to the `i2p new` contract.
 - `b2i check [brief] --fix` — mechanical auto-repair for failing briefs, rewritten in place (file paths only): re-quotes frontmatter `schema`/`template`/`distilled` values that truncate on read-back (interior quotes, unquoted `#`), heals a missing/empty `schema:` key, and normalizes trailing whitespace/final newline while preserving CRLF. Never invents content; reports applied fixes (max 3 shown) and re-validates.
@@ -77,7 +79,8 @@
 - `b2i list [--json]` — print schema version and supported templates.
 - Zero npm dependencies; pure Node.js (`node:fs`, `node:path`, `node:child_process`, `node:test`).
 
-[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...HEAD
+[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.2...HEAD
+[v0.4.2]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.2.0...v0.3.0

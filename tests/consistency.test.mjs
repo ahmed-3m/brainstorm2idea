@@ -86,16 +86,6 @@ describe('Consistency Guards', () => {
     assert.ok(VALID_TEMPLATES.includes('none'), 'VALID_TEMPLATES contains "none"');
   });
 
-  test('marketplace.json registers brainstorm2idea', () => {
-    const mktPath = resolve('../marketplace.json');
-    if (existsSync(mktPath)) {
-      const mkt = JSON.parse(readFileSync(mktPath, 'utf8'));
-      const found = mkt.plugins?.find((p) => p.name === 'brainstorm2idea');
-      assert.ok(found, 'marketplace.json contains brainstorm2idea plugin');
-      assert.equal(found.version, VERSION);
-    }
-  });
-
   test('all command files exist and are well-formed', () => {
     const cmds = ['b2i.md', 'b2i-dump.md', 'b2i-spark.md', 'b2i-export.md'];
     for (const cmdFile of cmds) {

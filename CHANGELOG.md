@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.4.3] — 2026-10-22
+
 ### Added
 - Claude Code plugin manifest (`.claude-plugin/plugin.json`) and a single-plugin marketplace (`.claude-plugin/marketplace.json`): `/plugin marketplace add ahmed-3m/brainstorm2idea`, then `/plugin install brainstorm2idea@brainstorm2idea`. The consistency suite pins both versions to the engine's.
 - `spark --seed … --output` and `dump --output` take `--force` to overwrite an existing brief.
@@ -29,6 +31,7 @@
 - Parser: `export` dropped `+` bullets and treated prose containing "2. " as a list item; a `## Goal` inside a fenced code block counted as the Goal section; a quoted frontmatter value was cut at its first interior quote; `distilled` length counted UTF-16 units, so 101 emoji failed the 200-char limit.
 - Windows: the npx fallback in `handoff` passed arguments to `cmd.exe` unquoted.
 - `/b2i-export` frontmatter was invalid YAML (`argument-hint: [--format a|b]`), so Claude Code dropped its description and hint. Command docs now use `b2i` consistently (defined in SKILL.md as shorthand for the bundled script), and `/b2i-dump` and SKILL.md now agree with the scorer that grade B means ≥ 80 (SKILL.md said 70).
+- The consistency suite's opportunistic marketplace check read `../marketplace.json` — a file outside the repo that only exists on some dev machines (stale versions there failed the suite locally while CI stayed green). Removed: the in-repo `.claude-plugin/marketplace.json` assertions added above are the authoritative guard.
 
 ## [v0.4.2] — 2026-10-22
 
@@ -107,7 +110,8 @@
 - `b2i list [--json]` — print schema version and supported templates.
 - Zero npm dependencies; pure Node.js (`node:fs`, `node:path`, `node:child_process`, `node:test`).
 
-[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.2...HEAD
+[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.3...HEAD
+[v0.4.3]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.3.0...v0.4.0

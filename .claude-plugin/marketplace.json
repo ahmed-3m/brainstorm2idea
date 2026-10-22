@@ -9,7 +9,7 @@
       "name": "brainstorm2idea",
       "source": "./",
       "description": "Turn fuzzy ideas into machine-linted prototype briefs (b2i-brief@1) and hand off to idea2prototype.",
-      "version": "0.4.2"
+      "version": "0.4.3"
     }
   ]
 }

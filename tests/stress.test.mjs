@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, rmSync, symlinkSync, chmodSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -8,6 +8,9 @@ import {
   parseSections,
   validateBrief,
   scoreBrief,
+  exportBrief,
+  quoteCmdArg,
+  mergeSectionsIntoPrototype,
   generateBriefFromSpark,
   SPARK_CATALOG,
   SPARK_CATEGORIES,
@@ -246,5 +249,274 @@ distilled: Safe handoff
     const fileContent = readFileSync(targetBrief, 'utf8');
     const checkRes = validateBrief(fileContent);
     assert.equal(checkRes.ok, true, 'seeded brief on disk passes 7/7 validation');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Marketplace-readiness regressions (docs/evals/2026-10-22-stress-and-efficacy.md).
+// Each test reproduces a bug found in the published v0.4.2.
+// ---------------------------------------------------------------------------
+
+const ENGINE = resolve('skills/brainstorm2idea/scripts/brainstorm2idea.mjs');
+const runNode = (args, input = null) => {
+  const res = spawnSync(process.execPath, args, { encoding: 'utf8', input: input ?? undefined });
+  return { code: res.status, stdout: res.stdout || '', stderr: res.stderr || '', all: (res.stdout || '') + (res.stderr || '') };
+};
+const ODD_CASE_BRIEF = `---
+schema: b2i-brief@1
+template: cli
+distilled: A tiny CLI that counts words
+---
+# WordCount
+
+## goal
+- Count words in a file
+
+## core flows
+1. Run wc on a file and print the count
+
+## out of scope
+- GUI
+`;
+const NO_STACK = /node:internal|node:fs|^\s+at /m;
+
+describe('Marketplace-readiness regressions', () => {
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('npm POSIX bin layout: a symlink named `b2i` runs the CLI (was a silent exit-0 no-op)', (t) => {
+    const link = join(TMP_DIR, 'b2i');
+    try {
+      symlinkSync(B2I_CLI, link, 'file');
+    } catch (err) {
+      t.skip(`cannot create symlinks here (${err.code})`);
+      return;
+    }
+    const version = runNode([link, '--version']);
+    assert.equal(version.code, 0);
+    assert.equal(version.stdout.trim(), VERSION);
+
+    const garbage = join(TMP_DIR, 'garbage.md');
+    writeFileSync(garbage, 'garbage\n');
+    const check = runNode([link, 'check', garbage]);
+    assert.equal(check.code, 1, 'an invalid brief must fail through the symlinked bin');
+    assert.match(check.stdout, /FAIL/);
+  });
+
+  test('engine script still runs directly (the path SKILL.md documents) and exactly once', () => {
+    const res = runNode([ENGINE, '--version']);
+    assert.equal(res.code, 0);
+    assert.equal(res.stdout.trim(), VERSION, 'printed once, not twice');
+  });
+
+  test('a directory where a file is expected fails cleanly, no stack trace', () => {
+    const dir = join(TMP_DIR, 'adir');
+    mkdirSync(dir);
+    for (const cmd of ['check', 'score', 'export', 'dump']) {
+      const res = runB2i([cmd, dir]);
+      assert.equal(res.code, 1, `${cmd} on a directory exits 1`);
+      assert.match(res.all, /FAIL/, `${cmd} prints a FAIL verdict`);
+      assert.match(res.all, /directory/);
+      assert.doesNotMatch(res.all, NO_STACK, `${cmd} must not print a stack trace`);
+    }
+    const json = runB2i(['check', dir, '--json']);
+    assert.equal(json.code, 1);
+    assert.equal(JSON.parse(json.stdout).ok, false, '--json still emits parseable JSON');
+  });
+
+  test('--output into a missing parent directory fails cleanly', () => {
+    const res = runB2i(['dump', '-', '--output', join(TMP_DIR, 'nope', 'brief.md')], 'um so a todo app');
+    assert.equal(res.code, 1);
+    assert.match(res.all, /FAIL[\s\S]*no such file or directory/);
+    assert.doesNotMatch(res.all, NO_STACK);
+  });
+
+  test('check --fix on a read-only brief fails cleanly instead of crashing', () => {
+    const brief = join(TMP_DIR, 'ro.md');
+    writeFileSync(brief, ODD_CASE_BRIEF.replace('schema: b2i-brief@1\n', ''));
+    chmodSync(brief, 0o444);
+    try {
+      const res = runB2i(['check', brief, '--fix']);
+      assert.equal(res.code, 1);
+      assert.match(res.all, /permission denied|read-only/i);
+      assert.doesNotMatch(res.all, NO_STACK);
+    } finally {
+      chmodSync(brief, 0o644);
+    }
+  });
+
+  test('spark --seed <id> --output <existing dir> writes <dir>/brief.md (as the help text advertises)', () => {
+    const res = runB2i(['spark', '--seed', 'env-diff', '--output', TMP_DIR]);
+    assert.equal(res.code, 0, res.all);
+    assert.equal(validateBrief(readFileSync(join(TMP_DIR, 'brief.md'), 'utf8')).ok, true);
+  });
+
+  test('handoff --target raw keeps section content when headings are lowercase', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    assert.equal(validateBrief(ODD_CASE_BRIEF).ok, true, 'check accepts lowercase headings');
+    const res = runB2i(['handoff', join(TMP_DIR, 'proj'), '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 0, res.all);
+    const proto = readFileSync(join(TMP_DIR, 'proj', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /## Goal\n- Count words in a file/);
+    assert.match(proto, /## Core flows\n1\. Run wc on a file/);
+    assert.match(proto, /## Out of scope\n- GUI/);
+  });
+
+  test('handoff --target raw refuses to overwrite an existing PROTOTYPE.md and keeps the brief', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    const proj = join(TMP_DIR, 'proj');
+    mkdirSync(proj);
+    writeFileSync(join(proj, 'PROTOTYPE.md'), 'hand-written spec\n');
+    const res = runB2i(['handoff', proj, '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /already exists/);
+    assert.equal(readFileSync(join(proj, 'PROTOTYPE.md'), 'utf8'), 'hand-written spec\n');
+    assert.ok(existsSync(brief), 'brief is not consumed by a refused handoff');
+  });
+
+  test('handoff rejects an unknown --target instead of silently using i2p', () => {
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(brief, ODD_CASE_BRIEF);
+    const res = runB2i(['handoff', join(TMP_DIR, 'proj'), '--target', 'rwa', '--brief', brief, '--dry-run']);
+    assert.equal(res.code, 1);
+    assert.match(res.all, /unknown --target "rwa"/);
+  });
+
+  test('export keeps + bullets that check accepts, and ignores prose that merely contains "2. "', () => {
+    const brief = ODD_CASE_BRIEF
+      .replace('- Count words in a file', '+ Count words in a file')
+      .replace('## out of scope\n- GUI', '## out of scope\n- GUI\nSee step 2. for details');
+    assert.equal(validateBrief(brief).ok, true);
+    const parsed = JSON.parse(exportBrief(brief, { format: 'json' }));
+    assert.deepEqual(parsed.goals, ['Count words in a file']);
+    assert.deepEqual(parsed.outOfScope, ['GUI']);
+  });
+
+  test('score --json exits 1 on an invalid brief, like plain score', () => {
+    const bad = join(TMP_DIR, 'bad.md');
+    writeFileSync(bad, 'garbage\n');
+    assert.equal(runB2i(['score', bad]).code, 1);
+    const json = runB2i(['score', bad, '--json']);
+    assert.equal(json.code, 1);
+    assert.equal(JSON.parse(json.stdout).ok, false);
+  });
+
+  test('score: a rabbit hole in Core flows is not "mitigated" by a synonym in Out of scope', () => {
+    const leaked = `---
+schema: b2i-brief@1
+template: web
+distilled: Sticker shop
+---
+# Shop
+
+## Goal
+- Sell stickers online
+
+## Core flows
+1. Pay for the cart with Stripe checkout
+2. Sign in with Google OAuth to see order history
+
+## Out of scope
+- PayPal payments
+- SAML enterprise SSO
+
+## Risks & assumptions
+- RISK: none
+`;
+    const result = scoreBrief(leaked);
+    assert.deepEqual(result.categories.rabbitHoles.detected.map((d) => d.label), ['OAuth/SSO', 'Payment gateway']);
+    assert.deepEqual(result.categories.rabbitHoles.mitigated, []);
+    assert.equal(result.breakdown.rabbitHoles, 10, '40 - 2 x 15');
+  });
+
+  test('quoteCmdArg caret-escapes cmd metacharacters, % included, and doubles trailing backslashes', () => {
+    assert.equal(quoteCmdArg('100%'), '^"100^%^"');
+    assert.equal(quoteCmdArg('C:\\work\\'), '^"C:\\work\\\\^"');
+    assert.equal(quoteCmdArg('say "hi"'), `^"say^ 'hi'^"`);
+  });
+
+  test('quoteCmdArg: a real cmd.exe shim receives every argument literally (Windows npx fallback)', (t) => {
+    if (process.platform !== 'win32') {
+      t.skip('cmd.exe is Windows-only');
+      return;
+    }
+    // Spawned exactly like handoff's fallback: spawnSync('npx', args.map(quoteCmdArg), { shell: true }).
+    const shim = join(TMP_DIR, 'shim');
+    mkdirSync(shim);
+    writeFileSync(join(shim, 'argv.js'), 'console.log(JSON.stringify(process.argv.slice(2)));\n');
+    writeFileSync(join(shim, 'npx.cmd'), '@node "%~dp0argv.js" %*\r\n');
+    const args = [
+      'new', 'C:\\work\\', '--template', 'cli',
+      '--idea', 'save 100% and use %OS%',
+      'see %B2I_INJECT% end',
+      'a & b | c > d < e ^ f ( g ) !h!',
+      'C:\\my dir\\sub\\',
+    ];
+    const res = spawnSync('npx', args.map(quoteCmdArg), {
+      encoding: 'utf8',
+      shell: true,
+      env: { ...process.env, PATH: `${shim};${process.env.PATH}`, B2I_INJECT: 'a" & echo INJECTED' },
+    });
+    // One JSON line: an expanded %B2I_INJECT% would close the quote and run `echo INJECTED`.
+    assert.deepEqual(JSON.parse(res.stdout.trim()), args, res.stdout + res.stderr);
+  });
+
+  test('a "## Goal" inside a fenced code block is not a section (an empty real Goal still fails)', () => {
+    const fenced = ODD_CASE_BRIEF.replace(
+      '## goal\n- Count words in a file\n',
+      '## Goal\n\n## Notes\n```md\n## Goal\n- example only\n```\n',
+    );
+    const { sections } = parseSections(parseFrontmatter(fenced).body);
+    assert.equal(sections.Goal, '');
+    assert.match(sections.Notes, /## Goal\n- example only/, 'fenced lines stay as content of the enclosing section');
+    assert.equal(validateBrief(fenced).ok, false);
+
+    // A line like "```md" inside an open fence is content, not a closer (CommonMark).
+    const nested = ODD_CASE_BRIEF.replace(
+      '## out of scope',
+      '## Notes\n```\n```md\n## Goal\n- example only\n```\n```\n\n## out of scope',
+    );
+    const nestedSections = parseSections(parseFrontmatter(nested).body).sections;
+    assert.equal(nestedSections.goal, '- Count words in a file', 'the real Goal survives');
+    assert.match(nestedSections.Notes, /## Goal\n- example only/);
+  });
+
+
+  test('frontmatter: interior quotes in a quoted value are kept, not truncated', () => {
+    const { meta } = parseFrontmatter('---\ndistilled: "Say "hi" now"\nname: \'it\'s\' # c\n---\n');
+    assert.equal(meta.distilled, 'Say "hi" now');
+    assert.equal(meta.name, "it's");
+    // A comment that itself contains the quote character is still a comment.
+    const commented = parseFrontmatter(
+      '---\na: "hello" # the "wc" tool\nb: \'ship it\' # it\'s a prototype\nc: "Say "hi" now" # note\n---\n',
+    ).meta;
+    assert.deepEqual(commented, { a: 'hello', b: 'ship it', c: 'Say "hi" now' });
+  });
+
+  test('distilled length counts characters, not UTF-16 units (101 emoji pass, 201 fail)', () => {
+    const withDistilled = (d) => ODD_CASE_BRIEF.replace('distilled: A tiny CLI that counts words', `distilled: ${d}`);
+    assert.equal(validateBrief(withDistilled('🚀'.repeat(101))).ok, true);
+    const over = validateBrief(withDistilled('🚀'.repeat(201)));
+    assert.equal(over.ok, false);
+    assert.match(over.errors.join('\n'), /201 chars, max 200/);
+  });
+
+  test('i2p merge inserts brief text verbatim, even with String.replace patterns like $& and $$', () => {
+    const proto = '# P\n\n## Goal\n- TODO\n\n## Core flows\n1. TODO\n\n## Out of scope\n- TODO\n';
+    const sections = {
+      Goal: '- Cost is $$5 and $& stays',
+      'Core flows': "1. Echo $' and $1",
+      'Out of scope': '- $` nothing',
+    };
+    const merged = mergeSectionsIntoPrototype(proto, { sections });
+    for (const text of Object.values(sections)) assert.ok(merged.includes(text), `kept verbatim: ${text}`);
   });
 });

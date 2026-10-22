@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValue, sanitizeInlineText } from './parser.mjs';
 
 // Re-export for backward compatibility (tests and external consumers import from engine)
@@ -124,11 +125,12 @@ export function validateBrief(content) {
     }
   }
 
-  // 7. distilled (non-empty, <= 200 chars)
-  if (!meta.distilled || meta.distilled.trim().length === 0) {
+  // 7. distilled (non-empty, <= 200 chars — code points, so one emoji is one char)
+  const distilledLen = [...String(meta.distilled || '').trim()].length;
+  if (distilledLen === 0) {
     errors.push('distilled: missing or empty distilled one-liner in frontmatter');
-  } else if (meta.distilled.trim().length > 200) {
-    errors.push(`distilled: ${meta.distilled.trim().length} chars, max 200`);
+  } else if (distilledLen > 200) {
+    errors.push(`distilled: ${distilledLen} chars, max 200`);
   }
 
   // Soft Warnings
@@ -225,14 +227,13 @@ export function scoreBrief(content) {
   const detectedRabbitHoles = [];
   const mitigatedRabbitHoles = [];
 
+  // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
+  // when "PayPal" is listed in Out of scope (both match the payments pattern).
   for (const rh of RABBIT_HOLES) {
-    const inOutOfScope = rh.pattern.test(outOfScope);
-    const inActiveScope = rh.pattern.test(activeScope);
-
-    if (inOutOfScope) {
-      mitigatedRabbitHoles.push(rh);
-    } else if (inActiveScope) {
+    if (rh.pattern.test(activeScope)) {
       detectedRabbitHoles.push(rh);
+    } else if (rh.pattern.test(outOfScope)) {
+      mitigatedRabbitHoles.push(rh);
     }
   }
 
@@ -543,6 +544,7 @@ export function cmdScore(args) {
 
   if (isJson) {
     console.log(JSON.stringify(result, null, 2));
+    return result.ok ? 0 : 1;
   } else {
     if (!result.ok) {
       console.error(`Brainstorm2idea score — ${c.red('INVALID')} (0/100)`);
@@ -1387,6 +1389,17 @@ export const SPARK_CATALOG = [
   },
 ];
 
+/** Resolve an --output path; an existing directory means `<dir>/brief.md`. */
+export function resolveBriefOutput(outputPath) {
+  const resolved = resolve(process.cwd(), outputPath);
+  try {
+    if (statSync(resolved).isDirectory()) return join(resolved, 'brief.md');
+  } catch {
+    // does not exist yet: it is the file path itself
+  }
+  return resolved;
+}
+
 export function generateBriefFromSpark(spark) {
   const flowsHeader = spark.template === 'library' ? '## Public API' : '## Core flows';
   const goalsText = spark.goals.map((g) => `- ${g}`).join('\n');
@@ -1452,7 +1465,7 @@ export function cmdSpark(args) {
     const briefMd = generateBriefFromSpark(spark);
 
     if (outputPath) {
-      const resolved = resolve(process.cwd(), outputPath);
+      const resolved = resolveBriefOutput(outputPath);
       writeFileSync(resolved, briefMd, 'utf8');
       if (isJson) {
         console.log(JSON.stringify({ ok: true, spark, path: resolved, content: briefMd }, null, 2));
@@ -1461,7 +1474,7 @@ export function cmdSpark(args) {
         console.log(`  id:       ${c.cyan(spark.id)}`);
         console.log(`  template: ${c.cyan(spark.template)}`);
         console.log(`  file:     ${resolved}`);
-        console.log(`\nNext step:\n  b2i check ${outputPath} && b2i score ${outputPath}`);
+        console.log(`\nNext step:\n  b2i check ${resolved} && b2i score ${resolved}`);
       }
     } else {
       if (isJson) {
@@ -1519,6 +1532,19 @@ export function cmdSpark(args) {
   return 0;
 }
 
+/**
+ * Escape one argument for a `shell: true` spawn on Windows (cmd.exe /d /s /c).
+ * Double quotes alone are not enough: cmd still expands %VAR% inside them, and
+ * a trailing backslash escapes the closing quote for the child's argv parser.
+ * So: replace interior `"` (as quoteFrontmatterValue does), double trailing
+ * backslashes, quote, then caret-escape every cmd metacharacter — quotes and
+ * % included — so cmd passes the whole argument through literally.
+ */
+export function quoteCmdArg(arg) {
+  const quoted = `"${String(arg).replace(/"/g, "'").replace(/(\\+)$/, '$1$1')}"`;
+  return quoted.replace(/([()\][%!^"`<>&|;, *?=])/g, '^$1');
+}
+
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   let text = prototypeContent;
   const sections = briefResult.sections;
@@ -1527,21 +1553,22 @@ export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   const goalKey = Object.keys(sections).find((k) => /^Goal$/i.test(k));
   if (goalKey) {
     const goalRegex = /(##\s+Goal\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:[-*][\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(goalRegex, `$1${sections[goalKey]}\n`);
+    // Function replacers: brief text containing `$&` or `$$` must land verbatim.
+    text = text.replace(goalRegex, (_, head) => `${head}${sections[goalKey]}\n`);
   }
 
   // Replace Core flows (or Public API in library template)
   const flowsKey = Object.keys(sections).find((k) => /^(Core flows|Public API)$/i.test(k));
   if (flowsKey) {
     const flowsRegex = /(##\s+(?:Core flows|Public API)\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:\d+\.[\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(flowsRegex, `$1${sections[flowsKey]}\n`);
+    text = text.replace(flowsRegex, (_, head) => `${head}${sections[flowsKey]}\n`);
   }
 
   // Replace Out of scope
   const oosKey = Object.keys(sections).find((k) => /^Out of scope$/i.test(k));
   if (oosKey) {
     const oosRegex = /(##\s+Out of scope\r?\n)(?:<!--[\s\S]*?-->\r?\n)?(?:[-*][\s\S]*?)?(?=\r?\n## |\r?\n$|$)/i;
-    text = text.replace(oosRegex, `$1${sections[oosKey]}\n`);
+    text = text.replace(oosRegex, (_, head) => `${head}${sections[oosKey]}\n`);
   }
 
   // Append Risks & assumptions if present
@@ -1586,6 +1613,13 @@ export function cmdHandoff(args) {
     const err = 'usage: b2i handoff <dir> [--target i2p|raw] [--brief <path>] [--i2p <path>] [--dry-run] [--json]';
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
     else console.error(err);
+    return 1;
+  }
+
+  if (targetMode !== 'i2p' && targetMode !== 'raw') {
+    const err = `unknown --target "${targetMode}" (must be i2p or raw)`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
     return 1;
   }
 
@@ -1648,11 +1682,15 @@ export function cmdHandoff(args) {
     const targetDir = resolve(process.cwd(), dir);
     const targetPrototype = join(targetDir, 'PROTOTYPE.md');
 
-    const flowsHeader = template === 'library'
-      ? `## Public API\n${briefResult.sections['Public API'] || briefResult.sections['Core flows'] || ''}`
-      : `## Core flows\n${briefResult.sections['Core flows'] || ''}`;
+    // Section headings are matched case-insensitively by `check`, so they must be
+    // here too — an exact-key lookup wrote empty sections and then deleted the brief.
+    const section = (pattern) => {
+      const key = Object.keys(briefResult.sections).find((k) => pattern.test(k));
+      return key ? briefResult.sections[key] : '';
+    };
+    const flowsHeader = `## ${template === 'library' ? 'Public API' : 'Core flows'}\n${section(/^(Core flows|Public API)$/i)}`;
 
-    let content = `# Prototype spec — ${name}\n\n> Idea: ${distilled}\n\n## Goal\n${briefResult.sections['Goal'] || ''}\n\n${flowsHeader}\n\n## Out of scope\n${briefResult.sections['Out of scope'] || ''}\n`;
+    let content = `# Prototype spec — ${name}\n\n> Idea: ${distilled}\n\n## Goal\n${section(/^Goal$/i)}\n\n${flowsHeader}\n\n## Out of scope\n${section(/^Out of scope$/i)}\n`;
 
     const risksKey = Object.keys(briefResult.sections).find((k) => /^Risks/i.test(k));
     if (risksKey && briefResult.sections[risksKey]) {
@@ -1675,6 +1713,12 @@ export function cmdHandoff(args) {
       return 0;
     }
 
+    if (existsSync(targetPrototype)) {
+      const err = `${join(dir, 'PROTOTYPE.md')} already exists — refusing to overwrite it (brief left intact). Remove it or choose another <dir>.`;
+      if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
+      else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
+      return 1;
+    }
     if (!existsSync(targetDir)) {
       mkdirSync(targetDir, { recursive: true });
     }
@@ -1750,9 +1794,11 @@ export function cmdHandoff(args) {
     return 0;
   }
 
-  // Execute scaffolding via child_process
+  // Execute scaffolding via child_process. On Windows, npx is a .cmd shim that
+  // can only be spawned through cmd.exe; Node then joins args unescaped, so
+  // brief text (name, distilled) must be quoted or `&`/`|` would run as commands.
   const useShell = cmd === 'npx' && process.platform === 'win32';
-  const spawnRes = spawnSync(cmd, cmdArgs, { encoding: 'utf8', shell: useShell });
+  const spawnRes = spawnSync(cmd, useShell ? cmdArgs.map(quoteCmdArg) : cmdArgs, { encoding: 'utf8', shell: useShell });
 
   if (spawnRes.status !== 0) {
     const stderr = (spawnRes.stderr || spawnRes.stdout || '').trim();
@@ -2018,7 +2064,7 @@ export function cmdDump(args) {
     .split(/[.!?]\s+/)
     .find((s) => s.trim().length > 10)
     ?.trim() || denoised.slice(0, 100);
-  const distilled = quoteFrontmatterValue(firstSentence).slice(0, 200);
+  const distilled = [...quoteFrontmatterValue(firstSentence)].slice(0, 200).join('');
 
   const draft = `---
 schema: ${SCHEMA_VERSION}
@@ -2047,7 +2093,7 @@ distilled: "${distilled}"
   const output = draft.trimEnd() + '\n';
 
   if (outputPath) {
-    const resolvedOut = resolve(process.cwd(), outputPath);
+    const resolvedOut = resolveBriefOutput(outputPath);
     writeFileSync(resolvedOut, output, 'utf8');
     if (isJson) {
       console.log(JSON.stringify({ ok: true, output: resolvedOut }, null, 2));
@@ -2104,7 +2150,7 @@ export function cmdInit(args) {
     else console.error(`Brainstorm2idea init — ${c.red('FAIL')}\n  ${err}`);
     return 1;
   }
-  const distilled = quoteFrontmatterValue(`${chosenTemplate} prototype for ${heading}`).slice(0, 200);
+  const distilled = [...quoteFrontmatterValue(`${chosenTemplate} prototype for ${heading}`)].slice(0, 200).join('');
   const briefPath = outputPath || resolve(process.cwd(), 'brief.md');
 
   const briefMd = `---
@@ -2139,7 +2185,7 @@ ${flowsHeader}
     return 1;
   }
 
-  const resolvedOut = resolve(process.cwd(), briefPath);
+  const resolvedOut = outputPath ? resolveBriefOutput(outputPath) : briefPath;
   if (existsSync(resolvedOut)) {
     const err = `brief already exists at ${resolvedOut}`;
     if (isJson) console.log(JSON.stringify({ ok: false, error: err }, null, 2));
@@ -2241,9 +2287,37 @@ export function cmdExport(args) {
 // Main CLI Router
 // ---------------------------------------------------------------------------
 
+/**
+ * Turn a filesystem error into a one-line, agent-readable note.
+ * Node's raw messages ("EISDIR: illegal operation on a directory, read") omit
+ * which argument was wrong, and an uncaught one prints a stack trace.
+ */
+export function describeFsError(err) {
+  const where = err?.path ? `: ${err.path}` : '';
+  switch (err?.code) {
+    case 'EISDIR': return `expected a file but got a directory${where}`;
+    case 'ENOENT': return `no such file or directory${where}`;
+    case 'ENOTDIR': return `a parent of this path is not a directory${where}`;
+    case 'EACCES':
+    case 'EPERM': return `permission denied${where}`;
+    case 'EROFS': return `read-only file system${where}`;
+    default: return err?.message || String(err);
+  }
+}
+
 export function main(argv = process.argv.slice(2)) {
   const [command, ...rest] = argv;
+  try {
+    return route(command, rest);
+  } catch (err) {
+    const msg = describeFsError(err);
+    if (rest.includes('--json')) console.log(JSON.stringify({ ok: false, error: msg }, null, 2));
+    else console.error(`Brainstorm2idea ${command} — FAIL\n  ${msg}`);
+    return 1;
+  }
+}
 
+function route(command, rest) {
   switch (command) {
     case 'check':
       return cmdCheck(rest);
@@ -2288,8 +2362,19 @@ export function main(argv = process.argv.slice(2)) {
   }
 }
 
-// Direct execution
-if (process.argv[1] && (process.argv[1].endsWith('brainstorm2idea.mjs') || process.argv[1].endsWith('b2i.mjs'))) {
-  const code = main();
-  if (code !== 0) process.exit(code);
+// Direct execution (`node .../brainstorm2idea.mjs <cmd>`, the path SKILL.md documents).
+// Compare real paths rather than filename suffixes: npm's POSIX bin is a symlink
+// named `b2i`, and bin/b2i.mjs calls main() itself.
+export function isDirectRun(argv1 = process.argv[1], self = fileURLToPath(import.meta.url)) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(self);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectRun()) {
+  // exitCode (not exit()) so piped stdout is fully flushed before the process ends.
+  process.exitCode = main();
 }

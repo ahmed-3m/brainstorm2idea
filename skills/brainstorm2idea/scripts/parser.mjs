@@ -29,8 +29,16 @@ export function parseFrontmatter(content) {
     // Strip inline comments only when outside quotes
     if (val.startsWith('"') || val.startsWith("'")) {
       const quoteChar = val[0];
-      const endQuoteIdx = val.indexOf(quoteChar, 1);
-      if (endQuoteIdx !== -1) {
+      // The closing quote is the first one followed only by nothing or a
+      // `# comment`, so `"Say "hi" now"` keeps its interior quotes and
+      // `"x" # the "wc" tool` still drops the comment.
+      let endQuoteIdx = -1;
+      for (let i = val.indexOf(quoteChar, 1); i !== -1; i = val.indexOf(quoteChar, i + 1)) {
+        const rest = val.slice(i + 1).trim();
+        if (rest === '' || rest.startsWith('#')) { endQuoteIdx = i; break; }
+      }
+      if (endQuoteIdx === -1) endQuoteIdx = val.lastIndexOf(quoteChar);
+      if (endQuoteIdx > 0) {
         val = val.slice(1, endQuoteIdx);
       } else {
         val = val.slice(1);
@@ -55,8 +63,23 @@ export function parseSections(body) {
   const sections = {};
   let currentSection = null;
   let currentContent = [];
+  // A `## Goal` inside a fenced code block is example text, not a section.
+  // CommonMark: a fence closes only on a bare marker of the same character, at
+  // least as long; "```md" inside an open fence is content, not a closer.
+  let fence = null;
 
   for (const line of lines) {
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const [, marker, rest] = fenceMatch;
+      if (!fence) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length && /^[ \t]*$/.test(rest)) fence = null;
+    }
+    if (fence || fenceMatch) {
+      if (currentSection) currentContent.push(line);
+      continue;
+    }
+
     const h1Match = line.match(/^#\s+(.+)$/);
     if (h1Match && !title) {
       title = h1Match[1].trim();
@@ -90,8 +113,10 @@ export function extractListItems(text) {
   return text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => /^[-*]\s+|\d+[.)]\s+/.test(l))
-    .map((l) => l.replace(/^[-*]\s+|\d+[.)]\s+/, '').trim())
+    // Same bullet set `check` accepts (- * +); anchored so prose like
+    // "see step 2. below" is not mistaken for a numbered item.
+    .filter((l) => /^(?:[-*+]|\d+[.)])\s+/.test(l))
+    .map((l) => l.replace(/^(?:[-*+]|\d+[.)])\s+/, '').trim())
     .filter(Boolean);
 }
 

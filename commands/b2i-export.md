@@ -1,6 +1,6 @@
 ---
 description: Export a prototype brief into an Agent Kickoff Prompt, GitHub Task Checklist, or One-page PRD (Brainstorm2Idea)
-argument-hint: [--format prompt|issues|prd|json] [--output <path>]
+argument-hint: "[--format prompt|issues|prd|json] [--output <path>]"
 ---
 
 Export the approved prototype brief (`b2i-brief@1`) into downstream development artifacts.
@@ -14,6 +14,6 @@ Export the approved prototype brief (`b2i-brief@1`) into downstream development 
    - **Raw JSON:** Machine-readable payload with parsed fields and 0–100 doability score.
 3. Execute the export command:
    ```bash
-   node bin/b2i.mjs export brief.md --format <prompt|issues|prd|json>
+   b2i export brief.md --format <prompt|issues|prd|json>
    ```
 4. If the user specifies `--output <file>`, save to that file; otherwise output the formatted Markdown in chat so the user can copy it immediately.

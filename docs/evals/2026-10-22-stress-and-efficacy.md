@@ -1,7 +1,7 @@
 # b2i stress test and A/B efficacy eval — 2026-10-22
 
 Scope: `@ahmed-3m/brainstorm2idea` v0.4.2 (published, `main` @ `dbe66ae`), on the way to marketplace listings.
-Fixes are on branch `claude/brave-margulis-f15ffd`. Nothing was published or released.
+Fixes #1–#16 landed in PR #4 (merged as `24bc9e4`). #17–#23 are on branch `claude/fix-open-stress-findings`. Nothing was published or released.
 
 - **Part 1:** stress test of every install path, every command under hostile input, and the agent flow.
 - **Part 2:** a pre-registered A/B — the same agent building 8 ideas with and without b2i. Spec: [2026-10-22-ab-efficacy-spec.md](2026-10-22-ab-efficacy-spec.md), committed before any run.
@@ -10,7 +10,7 @@ Fixes are on branch `claude/brave-margulis-f15ffd`. Nothing was published or rel
 
 1. **v0.4.2 is broken for most CLI users on Linux and macOS.** Through npx or a global install, every command prints nothing and exits 0. That includes `b2i check` on garbage, which makes it a silently passing lint gate in CI. Fixed on this branch. **This needs a 0.4.3 release before any marketplace listing**, because the README's npx quickstart is the broken path.
 2. 15 more real bugs were found and fixed, each with a regression test that fails on v0.4.2. One causes data loss: `handoff --target raw` deletes the brief after writing an empty spec.
-3. The Claude Code plugin cannot be installed from a marketplace yet. There is no `.claude-plugin/plugin.json`, and `agents/` holds host instruction files that Claude Code would load as subagents.
+3. The Claude Code plugin could not be installed from a marketplace. There was no `.claude-plugin/plugin.json`, and `agents/` held host instruction files that Claude Code would load as subagents. Fixed in the follow-up PR, together with the items that were still open when #4 merged (#17–#23). Only the path-traversal item stays open, because it is intended behaviour.
 4. A/B verdict: see [Part 2](#part-2--ab-efficacy-eval).
 
 ---
@@ -64,24 +64,33 @@ I checked each of these by hand.
 | 15 | Medium (plugin) | `commands/b2i-export.md` frontmatter is invalid YAML (`argument-hint: [--format prompt\|issues\|prd\|json]`). `claude plugin validate` reports an error, and Claude Code loads `/b2i-export` with its description and hint dropped. | Quoted. A consistency guard rejects unquoted `[` or `{` values. |
 | 16 | Low (agent flow) | The commands mixed repo-relative `node bin/b2i.mjs` (wrong for plugin installs) with bare `b2i` (not on PATH for skill installs). `/b2i-dump` asked for a score ≥ 80 while the skill says ≥ 70. `/b2i-spark` hard-coded "Doability rating: 100/100". `ask_question` is one host's tool name. | The commands use `b2i` throughout. SKILL.md defines it as shorthand for the bundled `node "<skill-base>/scripts/brainstorm2idea.mjs"`. The other text was aligned. |
 
-Tests: `npm test` gives 137 tests. On Windows with Node 24 and Node 18.17, 136 pass and 1 is skipped: the symlink test, because Windows needs privileges to create symlinks. On WSL with Node 22, all 137 pass.
+Tests: when #4 merged, `npm test` gave 138 tests. On Windows, 137 pass and 1 is skipped: the symlink test, because Windows needs privileges to create symlinks. After the follow-up PR there are 144 tests. On Windows with Node 24, 143 pass and 1 is skipped, with or without `FORCE_COLOR=1`.
 
-### Open (not fixed, by judgment)
+### Fixed in the follow-up PR (were open when #4 merged)
+
+Each has a regression test that fails on `24bc9e4`, the merge of #4.
+
+| # | Finding | Fix |
+|---|---|---|
+| 17 | `spark --seed` and `dump --output <file>` silently overwrote an existing `brief.md`, while `init` refuses. | Both refuse, naming `--force`, which overwrites. `/b2i-spark` tells the agent to ask the user before passing `--force`. |
+| 18 | Frontmatter must start on line 1. After a leading blank line, `check` reported "missing schema/template/distilled" although all three are present, and `--fix` repaired nothing. | `check` says "frontmatter must start on line 1". `--fix` removes the blank lines. |
+| 19 | Duplicate `## Goal` sections: the last one won without a warning (an empty second `## Goal` failed a valid brief). | A duplicated Goal, Core flows / Public API or Out of scope is a `check` error naming it. Other duplicates are a warning. `parseSections` returns `duplicates`. |
+| 20 | `score`'s library-template mismatch check used a case-sensitive `sections['Public API']`. | Case-insensitive, like `check`. |
+| 21 | `handoff --i2p <path-to-a-.cmd>` on Windows did not run. It spawned without a shell, and Node refuses `.cmd` files that way (`EINVAL`). | A `.cmd`/`.bat` goes through the same escaped `cmd.exe` line as the npx fallback (#14), with the program path caret-escaped too. That line is now passed as one string, which also removes Node 24's DEP0190 warning. |
+| 22 | With `FORCE_COLOR=1` in the environment, 8 tests failed: the spawned CLI coloured its output, as it should. | The test files drop `FORCE_COLOR` before spawning. |
+| 23 | Plugin layout (see the checklist): no `.claude-plugin/` manifest, and `agents/AGENTS.md` and `agents/CLAUDE.md` loaded as junk subagents. | Added `.claude-plugin/plugin.json` and `marketplace.json`, and moved the host guides to `hosts/`. Consistency tests pin the new manifests' versions and keep `agents/` to subagent files only. |
+
+### Open (by judgment)
 
 | Finding | Why left |
 |---|---|
-| `spark --seed` and `dump --output <file>` silently overwrite an existing `brief.md`, while `init` refuses. | Real inconsistency, but changing it changes documented agent flows ("seed the brief"). Proposal: refuse unless `--force`, as `init` does. |
-| Frontmatter must start at byte 0 (after an optional BOM). With a leading blank line, `check` reports "missing schema/template/distilled" although all three are present, and `--fix` repairs nothing. | Rare, but the message misleads. Proposal: have `--fix` strip leading blank lines, or have `check` say "frontmatter must start on line 1". |
-| Duplicate `## Goal` sections: the last one wins without a warning (an empty second `## Goal` fails a valid brief). | Proposal: a `check` error naming the duplicate. |
-| `score`'s library-template mismatch check uses case-sensitive `sections['Public API']`. | Advisory score only. Same one-line fix as #2. |
-| `handoff --i2p <path-to-a-.cmd>` on Windows does not run. It spawns without a shell, and Node refuses `.cmd` files that way (`EINVAL`). | Point `--i2p` at the `.mjs`/`.js` entry, which works. Proposal: route a `.cmd` path through the same escaped shell path as the npx fallback (#14). |
 | Path traversal in `--output` and `handoff <dir>` (`../../x`). | Intended: the tool writes where the user points it. Agents should pass paths the user named. |
 
 ### Agent-flow notes (SKILL.md and commands)
 
 - The flow is coherent: dialogue → approval gate → write → `check` → `score` → handoff. Arm A in the A/B (below) shows how an unattended agent actually runs it.
 - **Token burn:** SKILL.md is 9.1 KB (~2.3k tokens), and `/b2i` expands to ~220 more. That's acceptable, and verdicts are compact as promised (≤ 3 notes).
-- **Ambiguity fixed (#16):** which `b2i` to run. **Still open:** `agents/AGENTS.md` and `agents/CLAUDE.md` recommend `npx @ahmed-3m/brainstorm2idea check`. That is correct only once a fixed version is published.
+- **Ambiguity fixed (#16):** which `b2i` to run. **Still open (needs a release):** `hosts/AGENTS.md` and `hosts/CLAUDE.md` recommend `npx @ahmed-3m/brainstorm2idea check`. That is correct only once a fixed version is published.
 
 ---
 
@@ -102,20 +111,15 @@ Tests: `npm test` gives 137 tests. On Windows with Node 24 and Node 18.17, 136 p
 - ❌ **0.4.2's bin is broken on Linux and macOS (Part 1, #1).** Needs a 0.4.3 release from this branch. That's your call: I did not bump the version or publish.
 - ✅ `files` ships bin, skill, scripts, commands, agents, README and LICENSE. CI's package-smoke job now runs the npm-linked bin, so this class of bug fails CI.
 - ✅ `engines.node >= 18.17` is honoured: the full suite passes on 18.17.0. Zero dependencies. Provenance is on in the publish job.
-- ⚠️ `.zcode-plugin/` is not in `files`, so ZCode can't load the plugin from the npm tarball. That's fine if ZCode installs from git.
+- ✅ `.zcode-plugin/` and `.claude-plugin/` are now in `files`, so both manifests ship in the tarball.
 
 ### Claude Code plugin marketplace
 
-- ❌ **No `.claude-plugin/plugin.json`.** `claude plugin validate .` treats the repo as a loose components directory, not a plugin. Proposed manifest (not added, because it creates a public surface you should name):
-  ```json
-  { "name": "brainstorm2idea", "version": "0.4.3", "description": "…", "author": { "name": "ahmed-3m" },
-    "commands": "./commands", "skills": "./skills" }
-  ```
-  For `claude plugin marketplace add ahmed-3m/brainstorm2idea` to work, add `.claude-plugin/marketplace.json` too, with one entry whose `source` is `./`. Then extend the consistency test that pins `.zcode-plugin` to also pin both versions.
-- ❌ **`agents/AGENTS.md` and `agents/CLAUDE.md` are in the plugin's default `agents/` directory.** Claude Code loads that directory as subagents, and the validator warns "No frontmatter block found". Users would get two junk agents named AGENTS and CLAUDE. Move them (for example to `hosts/`), and update `package.json` `files` and any docs that link them.
-- ✅ After this branch's fix, all four commands' frontmatter parses (it was an error for `/b2i-export`).
+- ✅ **`.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` added** (#23). The marketplace has one entry, `brainstorm2idea`, with `source: "./"`. `claude plugin validate .` passes with no warnings, for the marketplace and for the plugin manifest. The README has the install line: `/plugin install brainstorm2idea --marketplace ahmed-3m/brainstorm2idea`. The consistency suite pins both versions to the engine's.
+- ✅ **The host guides moved from `agents/` to `hosts/`** (#23), so Claude Code no longer loads them as subagents named AGENTS and CLAUDE. A consistency test keeps `agents/` to subagent definitions only.
+- ✅ After #4, all four commands' frontmatter parses (it was an error for `/b2i-export`).
 - ✅ The skill frontmatter is valid (`name` matches its directory, description < 1024 chars).
-- ⚠️ Not verified: a live install through `/plugin install`. That needs the manifest above and a pushed marketplace.
+- ⚠️ Not verified: a live install through `/plugin install`. That needs this PR merged to main, since the marketplace is read from the default branch.
 
 ### ZCode — `.zcode-plugin/plugin.json`
 
@@ -131,7 +135,6 @@ Tests: `npm test` gives 137 tests. On Windows with Node 24 and Node 18.17, 136 p
 
 ### Before any listing (in order)
 
-1. Merge this branch and release 0.4.3 (npm and the ZCode version).
-2. Move `agents/*.md` out of `agents/` and add `.claude-plugin/plugin.json` and `marketplace.json`.
-3. Decide the open items above, especially whether `spark` and `dump` should overwrite an existing brief.
-4. Act on the Part 2 proposals.
+1. Merge the follow-up PR and release 0.4.3. Bump the engine, `package.json`, `.zcode-plugin` and both `.claude-plugin` files together (the consistency suite enforces this).
+2. Try a live `/plugin install` from the marketplace.
+3. Act on the Part 2 proposals.

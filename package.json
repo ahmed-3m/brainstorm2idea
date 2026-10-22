@@ -22,7 +22,9 @@
   },
   "files": [
     "bin/",
-    "agents/",
+    "hosts/",
+    ".claude-plugin/",
+    ".zcode-plugin/",
     "commands/",
     "skills/brainstorm2idea/SKILL.md",
     "skills/brainstorm2idea/scripts/",

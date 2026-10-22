@@ -21,6 +21,10 @@ const MOCK_I2P = resolve('tests/fixtures/mock-i2p.mjs');
 const FIXTURES_DIR = resolve('tests/fixtures');
 const TMP_DIR = resolve('tests/tmp-test-sandbox');
 
+// CLI output is asserted as plain text: a FORCE_COLOR in the caller's
+// environment would otherwise leak into every spawned b2i.
+delete process.env.FORCE_COLOR;
+
 function runB2i(args, env = {}, input = null) {
   const opts = {
     encoding: 'utf8',

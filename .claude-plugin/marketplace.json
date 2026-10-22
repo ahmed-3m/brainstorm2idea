@@ -1,0 +1,15 @@
+{
+  "name": "brainstorm2idea",
+  "owner": {
+    "name": "ahmed-3m"
+  },
+  "description": "brainstorm2idea: fuzzy idea to linted prototype brief, then handoff to idea2prototype.",
+  "plugins": [
+    {
+      "name": "brainstorm2idea",
+      "source": "./",
+      "description": "Turn fuzzy ideas into machine-linted prototype briefs (b2i-brief@1) and hand off to idea2prototype.",
+      "version": "0.4.2"
+    }
+  ]
+}

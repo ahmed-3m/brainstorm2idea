@@ -61,6 +61,10 @@ export function parseSections(body) {
   const lines = safeBody.split(/\r?\n/);
   let title = '';
   const sections = {};
+  // Headings seen more than once (case-insensitive): the last one wins in
+  // `sections`, so callers that care can reject the ambiguity.
+  const duplicates = [];
+  const seen = new Set();
   let currentSection = null;
   let currentContent = [];
   // A `## Goal` inside a fenced code block is example text, not a section.
@@ -92,6 +96,9 @@ export function parseSections(body) {
         sections[currentSection] = currentContent.join('\n').trim();
       }
       currentSection = h2Match[1].trim().replace(/:\s*$/, '');
+      const norm = currentSection.toLowerCase();
+      if (seen.has(norm) && !duplicates.some((d) => d.toLowerCase() === norm)) duplicates.push(currentSection);
+      seen.add(norm);
       currentContent = [];
       continue;
     }
@@ -105,7 +112,7 @@ export function parseSections(body) {
     sections[currentSection] = currentContent.join('\n').trim();
   }
 
-  return { title, sections };
+  return { title, sections, duplicates };
 }
 
 export function extractListItems(text) {

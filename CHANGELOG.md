@@ -2,7 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+- Claude Code plugin manifest (`.claude-plugin/plugin.json`) and a single-plugin marketplace (`.claude-plugin/marketplace.json`): `/plugin install brainstorm2idea --marketplace ahmed-3m/brainstorm2idea`. The consistency suite pins both versions to the engine's.
+- `spark --seed … --output` and `dump --output` take `--force` to overwrite an existing brief.
+- `parseSections` also returns `duplicates`: the headings that appear more than once.
+
+### Changed
+- `spark --seed … --output` and `dump --output` refuse to overwrite an existing brief, as `init` already did. Pass `--force` to overwrite.
+- The host guides moved from `agents/` to `hosts/` (`hosts/AGENTS.md`, `hosts/CLAUDE.md`). Claude Code loads `agents/` as subagents, so the guides showed up as junk agents named AGENTS and CLAUDE. The npm tarball now also ships `.claude-plugin/` and `.zcode-plugin/`.
+
 ### Fixed
+- `check` fails a brief with a duplicated Goal, Core flows / Public API or Out of scope section and names it. Before, the last copy silently won. Other duplicated sections are a warning.
+- Frontmatter after leading blank lines: `check` now says it must start on line 1 (it reported schema, template and distilled as missing), and `check --fix` removes the blank lines.
+- `score` recognised a library brief's `## Public API` only with that exact casing.
+- Windows: `handoff --i2p <path to a .cmd or .bat>` failed with `EINVAL`. It now runs through the same escaped `cmd.exe` command line as the npx fallback, with the program path escaped too. That line is passed as one string, which also silences Node 24's DEP0190 warning.
+- The test suite failed when `FORCE_COLOR` was set in the environment.
 - **The npm-installed `b2i` was a silent no-op on Linux/macOS.** npm links the bin as a bare `b2i` symlink, so the engine's `argv[1].endsWith('b2i.mjs')` guard never fired: `npx @ahmed-3m/brainstorm2idea …` and global installs printed nothing and exited 0 — including `check` on an invalid brief. `bin/b2i.mjs` now calls `main()` explicitly and the engine compares real paths. A CI step runs the npm-linked bin.
 - `handoff --target raw` dropped Goal/Core flows/Out of scope when headings were not Title-cased (which `check` accepts), wrote a hollow `PROTOTYPE.md`, then deleted the brief. Sections are now matched case-insensitively, and an existing `PROTOTYPE.md` is never overwritten.
 - `handoff` rejects an unknown `--target` instead of silently running i2p.

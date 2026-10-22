@@ -331,7 +331,8 @@ distilled: "CLI 'tool': test $VAR & pipe | redirect"
     assert.equal(res.code, 0);
 
     const proto = readFileSync(join(targetDir, 'PROTOTYPE.md'), 'utf8');
-    assert.match(proto, /Special & "Safe" \$App/);
+    // i2p rejects `"` in --name, so handoff passes it as `'`.
+    assert.match(proto, /Special & 'Safe' \$App/);
     assert.match(proto, /CLI 'tool': test \$VAR & pipe \| redirect/);
     assert.equal(existsSync(specialBrief), false);
   });

@@ -10,6 +10,7 @@ import {
   scoreBrief,
   exportBrief,
   quoteCmdArg,
+  toI2pArg,
   mergeSectionsIntoPrototype,
   generateBriefFromSpark,
   SPARK_CATALOG,
@@ -616,5 +617,26 @@ describe('Open stress-test items', () => {
     const proto = readFileSync(join(TMP_DIR, 'proj', 'PROTOTYPE.md'), 'utf8');
     assert.match(proto, /> Idea: Counts 100% of %OS% words & more/, 'the idea reached i2p literally');
     assert.match(proto, /Count words in a file/, 'the brief was merged');
+  });
+
+  test('handoff passes check-valid quotes and backslashes in distilled/title to i2p without tripping its arg guard', () => {
+    // Found in the A/B run: `distilled: … tap "watered today", …` passed check,
+    // then i2p refused --idea and the agent had to edit the brief.
+    const brief = join(TMP_DIR, 'brief.md');
+    writeFileSync(
+      brief,
+      ODD_CASE_BRIEF.replace('A tiny CLI that counts words', 'Tap "watered today" in C:\\plants').replace('# WordCount', '# Word "Count"')
+    );
+    assert.equal(validateBrief(readFileSync(brief, 'utf8')).ok, true);
+
+    const res = spawnSync(process.execPath, [B2I_CLI, 'handoff', 'proj', '--brief', brief, '--i2p', resolve('tests/fixtures/mock-i2p.mjs')], {
+      encoding: 'utf8',
+      cwd: TMP_DIR,
+    });
+    assert.equal(res.status, 0, res.stdout + res.stderr);
+    const proto = readFileSync(join(TMP_DIR, 'proj', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /# Prototype spec — Word 'Count'/);
+    assert.match(proto, /> Idea: Tap 'watered today' in C:\/plants/);
+    assert.equal(toI2pArg('a\tb\n"c"\\'), "a b 'c'/");
   });
 });

@@ -1590,6 +1590,15 @@ export function quoteCmdCommand(command) {
   return String(command).replace(/([()\][%!^"`<>&|;, *?=])/g, '^$1');
 }
 
+/**
+ * i2p rejects `"`, `\` and control characters in --name/--idea (they land in its
+ * JSON manifest), but check accepts them in a title or distilled line. Neutralise
+ * them so a brief that passes check also hands off.
+ */
+export function toI2pArg(value) {
+  return String(value).replace(/"/g, "'").replace(/\\/g, '/').replace(/[\u0000-\u001f]+/g, ' ').trim();
+}
+
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   let text = prototypeContent;
   const sections = briefResult.sections;
@@ -1793,40 +1802,42 @@ export function cmdHandoff(args) {
   // -------------------------------------------------------------------------
   let cmd = '';
   let cmdArgs = [];
+  const i2pName = toI2pArg(name);
+  const i2pIdea = toI2pArg(distilled);
 
   if (i2pOverride) {
     if (i2pOverride.endsWith('.mjs') || i2pOverride.endsWith('.js')) {
       cmd = process.execPath;
-      cmdArgs = [resolve(process.cwd(), i2pOverride), 'new', dir, '--template', template, '--name', name, '--idea', distilled];
+      cmdArgs = [resolve(process.cwd(), i2pOverride), 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
     } else {
       cmd = i2pOverride;
-      cmdArgs = ['new', dir, '--template', template, '--name', name, '--idea', distilled];
+      cmdArgs = ['new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
     }
   } else if (process.env.B2I_HANDOFF_CMD) {
     const parts = process.env.B2I_HANDOFF_CMD.split(' ');
     cmd = parts[0];
-    cmdArgs = [...parts.slice(1), dir, '--template', template, '--name', name, '--idea', distilled];
+    cmdArgs = [...parts.slice(1), dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
   } else {
     // Default: npx -y @ahmed-3m/idea2prototype@latest new ...
     if (process.platform === 'win32') {
       const npxCli = join(dirname(process.execPath), 'node_modules/npm/bin/npx-cli.js');
       if (existsSync(npxCli)) {
         cmd = process.execPath;
-        cmdArgs = [npxCli, '-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', name, '--idea', distilled];
+        cmdArgs = [npxCli, '-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
       } else {
         cmd = 'npx';
-        cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', name, '--idea', distilled];
+        cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
       }
     } else {
       cmd = 'npx';
-      cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', name, '--idea', distilled];
+      cmdArgs = ['-y', '@ahmed-3m/idea2prototype@latest', 'new', dir, '--template', template, '--name', i2pName, '--idea', i2pIdea];
     }
   }
 
   // Dry-run mode for i2p
   if (isDryRun) {
     const flowsHeader = template === 'library' ? '## Public API\n<!-- The 1-3 functions -->\n1.' : '## Core flows\n<!-- The 1-3 user flows -->\n1.';
-    const syntheticPrototype = `# Prototype spec — ${name}\n\n> Idea: ${distilled}\n\n## Goal\n<!-- Goal -->\n-\n\n${flowsHeader}\n\n## Modules (optional)\n-\n\n## Out of scope\n-\n`;
+    const syntheticPrototype = `# Prototype spec — ${i2pName}\n\n> Idea: ${i2pIdea}\n\n## Goal\n<!-- Goal -->\n-\n\n${flowsHeader}\n\n## Modules (optional)\n-\n\n## Out of scope\n-\n`;
     const mergedPreview = mergeSectionsIntoPrototype(syntheticPrototype, briefResult);
 
     if (isJson) {
@@ -1854,7 +1865,7 @@ export function cmdHandoff(args) {
     // Check for offline/network failure
     const isOffline = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ERR_INTERNET_DISCONNECTED|FetchError/i.test(stderr) || spawnRes.error?.code === 'ENOENT';
     if (isOffline) {
-      const retryCmd = `npx @ahmed-3m/idea2prototype@latest new ${dir} --template ${template} --name "${name}" --idea "${distilled}"`;
+      const retryCmd = `npx @ahmed-3m/idea2prototype@latest new ${dir} --template ${template} --name "${i2pName}" --idea "${i2pIdea}"`;
       if (isJson) {
         console.log(JSON.stringify({ ok: false, status: 'degraded_offline', retryCommand: retryCmd, error: stderr }, null, 2));
       } else {

@@ -110,6 +110,9 @@ export function validateBrief(content) {
     errors.push('flows: missing ## Core flows section');
   } else if (duplicateOf(/^(Core flows|Public API)$/i)) {
     errors.push(`flows: duplicate ## ${flowsSec.key} sections (merge them into one)`);
+  } else if (Object.keys(sections).filter((k) => /^(Core flows|Public API)$/i.test(k)).length > 1) {
+    // Consumers read one flows section, so the other would be silently dropped.
+    errors.push('flows: both ## Core flows and ## Public API present (keep one)');
   } else {
     const numbered = (flowsSec.content || '')
       .split(/\r?\n/)
@@ -1425,9 +1428,19 @@ export function resolveBriefOutput(outputPath) {
   return resolved;
 }
 
-/** spark and dump, like init, never clobber an existing brief unless --force. */
-function existingBriefError(path, force) {
-  return !force && existsSync(path) ? `brief already exists at ${path} (pass --force to overwrite it)` : null;
+/**
+ * spark and dump, like init, never clobber an existing brief unless --force.
+ * `wx` makes the no-overwrite create atomic, so two concurrent writers can't
+ * both pass an existence check. Returns an error message, or null once written.
+ */
+function writeBriefNoClobber(path, content, force) {
+  try {
+    writeFileSync(path, content, { encoding: 'utf8', flag: force ? 'w' : 'wx' });
+    return null;
+  } catch (e) {
+    if (e.code === 'EEXIST') return `brief already exists at ${path} (pass --force to overwrite it)`;
+    throw e;
+  }
 }
 
 export function generateBriefFromSpark(spark) {
@@ -1496,13 +1509,12 @@ export function cmdSpark(args) {
 
     if (outputPath) {
       const resolved = resolveBriefOutput(outputPath);
-      const exists = existingBriefError(resolved, args.includes('--force'));
+      const exists = writeBriefNoClobber(resolved, briefMd, args.includes('--force'));
       if (exists) {
         if (isJson) console.log(JSON.stringify({ ok: false, error: exists }, null, 2));
         else console.error(`Brainstorm2idea spark — ${c.red('FAIL')}\n  ${exists}`);
         return 1;
       }
-      writeFileSync(resolved, briefMd, 'utf8');
       if (isJson) {
         console.log(JSON.stringify({ ok: true, spark, path: resolved, content: briefMd }, null, 2));
       } else {
@@ -2143,13 +2155,12 @@ distilled: "${distilled}"
 
   if (outputPath) {
     const resolvedOut = resolveBriefOutput(outputPath);
-    const exists = existingBriefError(resolvedOut, args.includes('--force'));
+    const exists = writeBriefNoClobber(resolvedOut, output, args.includes('--force'));
     if (exists) {
       if (isJson) console.log(JSON.stringify({ ok: false, error: exists }, null, 2));
       else console.error(`Brainstorm2idea dump — ${c.red('FAIL')}\n  ${exists}`);
       return 1;
     }
-    writeFileSync(resolvedOut, output, 'utf8');
     if (isJson) {
       console.log(JSON.stringify({ ok: true, output: resolvedOut }, null, 2));
     } else {

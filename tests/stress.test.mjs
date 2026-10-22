@@ -583,6 +583,15 @@ describe('Open stress-test items', () => {
     const notes = validateBrief(dupNotes);
     assert.equal(notes.ok, true);
     assert.match(notes.warnings.join('\n'), /duplicate ## notes section: only the last one is used/);
+    // ...and the last one really is the one kept, whatever its case.
+    assert.deepEqual(
+      Object.keys(notes.sections).filter((k) => /^notes$/i.test(k)).map((k) => notes.sections[k]),
+      ['- b']
+    );
+
+    const both = validateBrief(ODD_CASE_BRIEF.replace('## out of scope', '## Public API\n1. count(text)\n\n## out of scope'));
+    assert.equal(both.ok, false, 'Core flows and Public API together would drop one of them downstream');
+    assert.match(both.errors.join('\n'), /flows: both ## Core flows and ## Public API present/);
   });
 
   test('score: a lowercase "## public api" counts as the library API section', () => {

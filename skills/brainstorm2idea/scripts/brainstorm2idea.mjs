@@ -12,7 +12,7 @@ export { parseFrontmatter, parseSections, extractListItems, quoteFrontmatterValu
 export { SCHEMA_VERSION, VALID_TEMPLATES } from './constants.mjs';
 export { SPARK_CATEGORIES, SPARK_CATALOG, generateBriefFromSpark } from './sparks.mjs';
 
-export const VERSION = '0.4.3';
+export const VERSION = '0.5.0';
 
 // Every CLI command the router accepts. Kept in sync with the router switch
 // and asserted against SKILL.md / AGENTS.md by the consistency test suite.

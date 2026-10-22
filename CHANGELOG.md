@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.5.0] — 2026-10-23
+
 ### Added
 - Prototype archetype catalog grew from 30 to 40 entries, adding: lockfile-diff, md-table-align, todo-collector, weekly-retro, tool-call-parser, context-budget, log-pruner, file-watch-trigger, http-bench-ping, and color-palette-lab.
 - First-class programmatic API via package.json `exports` map and `main`: root import now resolves to the engine; `./parser`, `./sparks`, and `./constants` subpaths; `./skills/*` wildcard preserves deep imports; CI smoke now imports the installed package.
@@ -125,7 +127,8 @@
 - `b2i list [--json]` — print schema version and supported templates.
 - Zero npm dependencies; pure Node.js (`node:fs`, `node:path`, `node:child_process`, `node:test`).
 
-[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.3...HEAD
+[unreleased]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.3...v0.5.0
 [v0.4.3]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/ahmed-3m/brainstorm2idea/compare/v0.4.0...v0.4.1

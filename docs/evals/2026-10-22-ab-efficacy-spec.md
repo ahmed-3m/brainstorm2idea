@@ -19,6 +19,7 @@ without it, and is the overhead worth paying?
 | b2i under test | Repo commit `dbe66ae` (= published v0.4.2): `skills/brainstorm2idea/` copied into `<ws>/.opencode/skills/brainstorm2idea/` |
 | idea2prototype | Published `@ahmed-3m/idea2prototype@latest` via `npx` (the default `b2i handoff` path) |
 | Workspace | A fresh empty `git init` directory per run, outside any repo |
+| Isolation | OpenCode also loads the user's global skills (other brainstorming/spec skills are installed), so each workspace gets an `opencode.json` with `permission.skill`: arm A `{"*": "deny", "brainstorm2idea": "allow"}`, arm B `{"*": "deny"}`. Verified before any trial: the agent's skill list is then `[brainstorm2idea]` (A) or empty (B). Runs use `--standalone` with `OPENCODE_DISABLE_CLAUDE_CODE=1`, so global Claude Code instruction files are not injected. |
 | Platform | Windows 11, Node 24.12 |
 | Time limit | 60 min per initial run; 30 min per rework round |
 | Repetitions | n = 1 per (idea × arm) → 8 paired comparisons, 16 initial runs |

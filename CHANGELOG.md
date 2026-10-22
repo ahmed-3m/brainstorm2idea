@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+- **The npm-installed `b2i` was a silent no-op on Linux/macOS.** npm links the bin as a bare `b2i` symlink, so the engine's `argv[1].endsWith('b2i.mjs')` guard never fired: `npx @ahmed-3m/brainstorm2idea …` and global installs printed nothing and exited 0 — including `check` on an invalid brief. `bin/b2i.mjs` now calls `main()` explicitly and the engine compares real paths. A CI step runs the npm-linked bin.
+- `handoff --target raw` dropped Goal/Core flows/Out of scope when headings were not Title-cased (which `check` accepts), wrote a hollow `PROTOTYPE.md`, then deleted the brief. Sections are now matched case-insensitively, and an existing `PROTOTYPE.md` is never overwritten.
+- `handoff` rejects an unknown `--target` instead of silently running i2p.
+- The i2p merge expanded `$&`, `$$` and similar sequences in brief text (String.replace patterns) into `PROTOTYPE.md`.
+- Filesystem errors (a directory as the brief, a missing `--output` parent, a read-only brief under `--fix`) printed a Node stack trace; they now print a one-line FAIL (or `{ok:false}` under `--json`) and exit 1.
+- `spark --seed`, `dump` and `init` with `--output <existing dir>` write `<dir>/brief.md` instead of crashing.
+- `score --json` exited 0 on an invalid brief.
+- `score` reported OAuth or a payment gateway used in Core flows as "Mitigated" when a related term appeared in Out of scope (a 100/100 for a brief that builds the rabbit hole).
+- Parser: `export` dropped `+` bullets and treated prose containing "2. " as a list item; a `## Goal` inside a fenced code block counted as the Goal section; a quoted frontmatter value was cut at its first interior quote; `distilled` length counted UTF-16 units, so 101 emoji failed the 200-char limit.
+- Windows: the npx fallback in `handoff` passed arguments to `cmd.exe` unquoted.
+- `/b2i-export` frontmatter was invalid YAML (`argument-hint: [--format a|b]`), so Claude Code dropped its description and hint. Command docs now use `b2i` consistently (defined in SKILL.md as shorthand for the bundled script), and `/b2i-dump`'s score threshold matches the skill (≥ 70).
+
 ## [v0.4.2] — 2026-10-22
 
 ### Added

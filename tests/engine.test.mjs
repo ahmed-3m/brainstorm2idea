@@ -1515,3 +1515,41 @@ distilled: Bot that deploys the main branch to staging when CI is green
     }
   });
 });
+
+const INVARIANTS = [
+  '## Invariants',
+  '- The judged PR never configures its own gate',
+  '- Only the exact head SHA that passed tests is merged',
+].join('\n');
+const withInvariants = (brief, block = INVARIANTS) => `${brief.trimEnd()}\n\n${block}\n`;
+
+describe('11. Judgment: ## Invariants', () => {
+  test('invariants sit beside the 3-flow cap and never fail check', () => {
+    const res = validateBrief(withInvariants(DEVLOOP_FIXED));
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.deepEqual(res.warnings, []);
+  });
+
+  test('more than 5 invariants warns', () => {
+    const six = ['## Invariants', ...Array.from({ length: 6 }, (_, i) => `- Rule ${i + 1} holds in every flow`)].join('\n');
+    const res = validateBrief(withInvariants(DEVLOOP_FIXED, six));
+    assert.equal(res.ok, true);
+    assert.ok(res.warnings.includes('invariants: 6 bullets, recommended max 5'), JSON.stringify(res.warnings));
+  });
+
+  test('a trust trigger without ## Invariants earns a tip, not a warning', () => {
+    const val = validateBrief(DEVLOOP_FIXED);
+    assert.ok(!val.warnings.some((w) => w.startsWith('invariants')), JSON.stringify(val.warnings));
+    const sc = scoreBrief(DEVLOOP_FIXED);
+    assert.ok(sc.tips.some((t) => t.includes('## Invariants')), JSON.stringify(sc.tips));
+
+    const withRules = scoreBrief(withInvariants(DEVLOOP_FIXED));
+    assert.ok(!withRules.tips.some((t) => t.includes('## Invariants')), JSON.stringify(withRules.tips));
+  });
+
+  test('no trust trigger, no invariants tip', () => {
+    const sc = scoreBrief(readFileSync(join(FIXTURES_DIR, 'valid-brief.md'), 'utf8'));
+    assert.ok(!sc.tips.some((t) => t.includes('## Invariants')), JSON.stringify(sc.tips));
+  });
+});

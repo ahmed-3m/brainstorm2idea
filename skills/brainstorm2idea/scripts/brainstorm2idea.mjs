@@ -211,6 +211,12 @@ export function validateBrief(content, options = {}) {
     }
   }
 
+  // Invariants: rules every flow must obey. Optional, and never counted toward the 3-flow cap.
+  const invariantCount = bulletsOf(getSection(/^Invariants$/i)?.content).length;
+  if (invariantCount > 5) {
+    warnings.push(`invariants: ${invariantCount} bullets, recommended max 5`);
+  }
+
   // Two-product smell soft warning (advisory only)
   const goalBullets = (goalSec?.content || '')
     .split(/\r?\n/)
@@ -435,6 +441,9 @@ export function scoreBrief(content) {
   const twoProductWarn = valid.warnings.find((w) => w.startsWith('two-product smell: '));
   if (twoProductWarn) {
     tips.push(`💡 Two-product smell: ${twoProductWarn.slice('two-product smell: '.length)}`);
+  }
+  if (valid.judgment.trustTriggers.length > 0 && !Object.keys(sections).some((k) => /^Invariants$/i.test(k))) {
+    tips.push('💡 Trust boundary in scope: add ## Invariants (≤5 rules every flow must obey, e.g. "the change being judged never edits its own gate").');
   }
 
   return {

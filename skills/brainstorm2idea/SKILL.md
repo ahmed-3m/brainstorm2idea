@@ -130,9 +130,12 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 ## Alternatives
 - Nearest existing tool: what it does. Differs by: how this brief differs (optional, 2–3 bullets)
+
+## Invariants
+- A rule every flow must obey, e.g. the change being judged never edits its own gate (optional, ≤5 bullets)
 ```
 
-The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score.
+The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score. `## Invariants` is optional and does not count toward the 3-flow cap; `check` warns above 5 bullets, and `score` tips you to add it when a trust trigger fires and the section is absent.
 
 ## Token Discipline
 - Edits are diff-sized; never re-print the full brief on minor tweaks.

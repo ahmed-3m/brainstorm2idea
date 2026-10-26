@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Optional `## Alternatives` section (prior art): `- <Name>: <what it does>. Differs by: <how this brief differs>`. `check` warns when it is missing, has fewer than 2 bullets (TODO placeholders don't count), or a bullet lacks `Differs by:`. Still 7 hard checks; `validateBrief` returns an additive `judgment.alternatives` (`ok` | `thin` | `missing`). The SKILL.md Doability Duty now starts by naming the 2–3 nearest existing tools.
+
+### Changed
+- `check` prints at most 3 notes in total, failures first, then warnings, plus a `(+N more notes; b2i check --json lists all)` line. Warnings used to print uncapped after the failures.
+
 ## [v0.5.1] — 2026-10-23
 
 ### Fixed

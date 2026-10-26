@@ -51,9 +51,10 @@ The journey is free — adapt to the idea:
 
 ### Explicit Doability Duty
 Before drafting, resolve:
-1. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
-2. The smallest demoable slice (`## Core flows`, 1–3 items).
-3. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
+1. **Who already does this?** Name the 2–3 nearest existing tools (use web search when your host has it; this costs no question) and record them in `## Alternatives` as `- <Name>: <what it does>. Differs by: <how this brief differs>`. If nothing differs, say so and offer a reframe. Don't proceed silently: `b2i score` measures shape, so a well-formed clone still scores 100.
+2. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
+3. The smallest demoable slice (`## Core flows`, 1–3 items).
+4. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
 
 Flows that cannot be demoed belong in `## Out of scope`. If the idea is not software-prototype doable, say so honestly and offer to reshape or output `template: none` (brief-only mode).
 Non-software idea (physical, offline, event): write `template: none`, finish with check + score + export — handoff will politely decline; do not force a software template.
@@ -124,7 +125,12 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 ## Notes
 - Free-form: constraints, preferences, data sources (optional, ≤6 bullets)
+
+## Alternatives
+- Nearest existing tool: what it does. Differs by: how this brief differs (optional, 2–3 bullets)
 ```
+
+The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`.
 
 ## Token Discipline
 - Edits are diff-sized; never re-print the full brief on minor tweaks.

@@ -115,9 +115,13 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 ## Notes
 - Keep UI minimal and keyboard-friendly
+
+## Alternatives
+- Paprika: paid recipe manager with cloud sync. Differs by: free, offline-only, no account
+- A notes app: free-form text anywhere. Differs by: structured tags and ingredient search
 ```
 
-`b2i check` enforces seven hard rules — schema, name, template, goal (1–3 bullets), flows (1–3 numbered), out-of-scope (≥1 bullet), distilled (≤200 chars) — and surfaces at most three failure notes, so agent iterations stay cheap.
+`b2i check` enforces seven hard rules — schema, name, template, goal (1–3 bullets), flows (1–3 numbered), out-of-scope (≥1 bullet), distilled (≤200 chars) — and surfaces at most three notes, failures first, so agent iterations stay cheap. `## Alternatives` is optional and never fails a check; when it is missing or thin, `check` adds a warning, because the score measures shape, not whether the tool already exists.
 
 ## Doability scoring (`b2i score`)
 

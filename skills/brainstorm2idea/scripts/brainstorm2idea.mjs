@@ -209,6 +209,9 @@ export function validateBrief(content, options = {}) {
     warnings.push(`two-product smell: "${snippet}…" joins two deliverables — brief one product and park the other in ## Out of scope`);
   }
 
+  // Judgment checks: warnings beside the 7 hard checks, never failures.
+  const judgment = judgeBrief(getSection, warnings);
+
   const passed = 7 - errors.length;
   const ok = errors.length === 0;
 
@@ -225,7 +228,43 @@ export function validateBrief(content, options = {}) {
       distilled: (meta.distilled ?? '').trim(),
     },
     sections,
+    judgment,
   };
+}
+
+const bulletsOf = (text) => String(text || '')
+  .split(/\r?\n/)
+  .map((l) => l.trim())
+  .filter((l) => /^[-*+]\s+.+/.test(l))
+  .map((l) => l.replace(/^[-*+]\s+/, ''));
+
+const snip = (s, n = 40) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * What the doability score cannot see. `b2i score` measures shape only, so a
+ * well-formed clone of an existing tool scores 100. These checks push their
+ * findings onto `warnings` and return a compact verdict per check.
+ */
+function judgeBrief(getSection, warnings) {
+  // Prior art: the nearest existing tools, and how this brief differs from each.
+  let alternatives = 'ok';
+  const altSec = getSection(/^Alternatives$/i);
+  if (!altSec) {
+    alternatives = 'missing';
+    warnings.push('alternatives: no ## Alternatives section; the score checks shape, not whether this already exists');
+  } else {
+    const alts = bulletsOf(altSec.content).filter((b) => !/^TODO\b/i.test(b));
+    const undiffered = alts.find((b) => !/\bDiffers by:/i.test(b));
+    if (alts.length < 2) {
+      alternatives = 'thin';
+      warnings.push(`alternatives: ${alts.length} bullet${alts.length === 1 ? '' : 's'}, name the 2-3 nearest existing tools as "- <Name>: <what it does>. Differs by: <how this differs>"`);
+    } else if (undiffered) {
+      alternatives = 'thin';
+      warnings.push(`alternatives: "${snip(undiffered)}" has no "Differs by:"; say how this brief differs`);
+    }
+  }
+
+  return { alternatives };
 }
 
 // ---------------------------------------------------------------------------
@@ -562,13 +601,17 @@ export function cmdCheck(args) {
     if (appliedFixes.length > 3) {
       console.log(`  ${c.dim(`(+${appliedFixes.length - 3} more mechanical fixes applied)`)}`);
     }
-    if (!result.ok) {
-      for (const err of result.errors.slice(0, 3)) {
-        console.log(`  ${c.red(err)}`);
-      }
+    // At most 3 notes per run, failures first; warnings fill the slots left.
+    const notes = [
+      ...(result.ok ? [] : result.errors.map((err) => c.red(err))),
+      ...result.warnings.map((w) => `${c.yellow('note:')} ${w}`),
+    ];
+    for (const note of notes.slice(0, 3)) {
+      console.log(`  ${note}`);
     }
-    for (const w of result.warnings) {
-      console.log(`  ${c.yellow('note:')} ${w}`);
+    if (notes.length > 3) {
+      const more = notes.length - 3;
+      console.log(`  ${c.dim(`(+${more} more note${more === 1 ? '' : 's'}; b2i check --json lists all)`)}`);
     }
   }
 

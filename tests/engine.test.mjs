@@ -1337,3 +1337,71 @@ distilled: Lightweight shared plant watering tracker showing days until next wat
     assert.match(res.all, /usage: b2i handoff <dir>.*\(prefer a fresh, empty directory\)/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Judgment checks: prior art, trust boundaries, invariants. All are warnings or
+// tips beside the 7 hard checks; the doability score stays a pure shape score.
+// DevLoop is a real brief that scored 100/100 while cloning existing tools and
+// auto-merging with tests run outside any sandbox.
+// ---------------------------------------------------------------------------
+
+// Fixtures check out with CRLF on Windows; the assertions below expect LF.
+const DEVLOOP = readFileSync(join(FIXTURES_DIR, 'devloop-brief.md'), 'utf8').replace(/\r\n/g, '\n');
+const DEVLOOP_FIXED = readFileSync(join(FIXTURES_DIR, 'devloop-fixed.md'), 'utf8').replace(/\r\n/g, '\n');
+const ALTERNATIVES_MISSING = 'alternatives: no ## Alternatives section; the score checks shape, not whether this already exists';
+const withAlternatives = (brief, bullets) => `${brief.trimEnd()}\n\n## Alternatives\n${bullets.join('\n')}\n`;
+
+describe('9. Judgment: ## Alternatives (prior art)', () => {
+  test('DevLoop still passes 7/7 but warns that prior art was never checked', () => {
+    const res = validateBrief(DEVLOOP);
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.equal(res.total, 7);
+    assert.ok(res.warnings.includes(ALTERNATIVES_MISSING), JSON.stringify(res.warnings));
+    assert.equal(res.judgment.alternatives, 'missing');
+  });
+
+  test('two bullets that each say how this differs satisfy the check', () => {
+    const res = validateBrief(DEVLOOP_FIXED);
+    assert.equal(res.ok, true);
+    assert.ok(!res.warnings.some((w) => w.startsWith('alternatives:')), JSON.stringify(res.warnings));
+    assert.equal(res.judgment.alternatives, 'ok');
+  });
+
+  test('one bullet is thin and names the count', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, ['- OpenHands: open-source coding agent. Differs by: no agent runtime']));
+    assert.equal(res.ok, true);
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => /^alternatives: 1 bullet\b/.test(w)), JSON.stringify(res.warnings));
+  });
+
+  test('a bullet without "Differs by:" is thin and names that bullet', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, [
+      '- OpenHands: open-source coding agent. Differs by: no agent runtime',
+      '- Devin: hosted autonomous engineer',
+    ]));
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => w.startsWith('alternatives: ') && w.includes('Devin') && w.includes('Differs by:')), JSON.stringify(res.warnings));
+  });
+
+  test('a TODO placeholder does not count as an alternative', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, ['- TODO: <Name>: <what it does>. Differs by: <how this brief differs>']));
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => /^alternatives: 0 bullets\b/.test(w)), JSON.stringify(res.warnings));
+  });
+
+  test('check prints at most 3 notes, failures first', () => {
+    // 5 failing checks plus a judgment warning: only 3 lines of notes.
+    const res = runB2i(['check', '-'], {}, '---\nschema: b2i-brief@1\n---\n# Bare\n');
+    assert.equal(res.code, 1);
+    const notes = res.stdout.split(/\r?\n/).filter((l) => /^ {2}\S/.test(l) && !l.includes('more note'));
+    assert.equal(notes.length, 3, res.stdout);
+    assert.ok(!notes.some((l) => l.includes('note:')), 'failures fill the 3 slots before any warning');
+    assert.match(res.stdout, /\(\+\d+ more notes?; b2i check --json lists all\)/);
+
+    const ok = runB2i(['check', join(FIXTURES_DIR, 'devloop-brief.md')]);
+    assert.equal(ok.code, 0);
+    assert.match(ok.stdout, /Brainstorm2idea check — PASS \(7\/7\)/);
+    assert.ok(ok.stdout.includes(`note: ${ALTERNATIVES_MISSING}`), ok.stdout);
+  });
+});

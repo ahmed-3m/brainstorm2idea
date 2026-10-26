@@ -62,9 +62,12 @@ export const RABBIT_HOLES = [
 // phrase-shaped so "push notifications" or "token counts" stay quiet.
 export const TRUST_TRIGGERS = [
   { pattern: /\b(?:auto[- ]?merg(?:e|es|ed|ing)|merg(?:e|es|ed|ing)\s+(?:the\s+|a\s+|its\s+|their\s+)?(?:PRs?|pull\s+requests?|MRs?|merge\s+requests?)|(?:git|force)[- ]push(?:es|ed|ing)?|push(?:es|ed|ing)?\s+(?:it\s+|them\s+)?(?:directly\s+)?to\s+(?:main|master|origin|remote|prod(?:uction)?|the\s+(?:default\s+)?branch)|deploy(?:s|ed|ing|ments?)?|releas(?:e|es|ed|ing)\s+(?:it\s+)?to\s+(?:npm|pypi|prod(?:uction)?|users)|publish(?:es|ed|ing)?\s+(?:it\s+|the\s+package\s+)?to\s+(?:npm|pypi|the\s+registry))\b/i, label: 'merge/deploy' },
-  { pattern: /\b(?:credentials?|api[ _-]?keys?|(?:access|auth|bearer|refresh|personal\s+access|deploy|bot|github|npm)[ _-]?tokens?|[A-Z][A-Z0-9_]*_(?:TOKEN|API_KEY|SECRET)|client\s+secrets?|private\s+keys?|ssh\s+keys?|secrets?\s+(?:managers?|stores?|vaults?))\b/i, label: 'credentials' },
-  { pattern: /\b(?:run|runs|running|ran|execut(?:e|es|ed|ing))\s+(?:the\s+|its\s+|their\s+|repo\s+|project\s+|arbitrary\s+|untrusted\s+|user[- ]supplied\s+|generated\s+|PR\s+)*(?:tests|test\s+(?:suites?|commands?)|code|scripts?|shell(?:\s+commands?)?|arbitrary\s+commands?)\b/i, label: 'runs code' },
-  { pattern: /(?<!user[- ])\b(?:agentic|agents?)\b(?![\s-]+(?:outputs?|responses?|payloads?|transcripts?|logs?|evals?)\b)/i, label: 'agent' },
+  { pattern: /\b(?:credentials?|api[ _-]?keys?|(?:access|auth|bearer|refresh|personal\s+access|deploy|bot|github|npm)[ _-]?tokens?|client\s+secrets?|private\s+keys?|ssh\s+keys?|secrets?\s+(?:managers?|stores?|vaults?))\b/i, label: 'credentials' },
+  // Env-var names are matched case-sensitively, so "next_token" cursors stay quiet.
+  { pattern: /\b[A-Z][A-Z0-9_]*_(?:TOKEN|API_KEY|SECRET)\b/, label: 'credentials' },
+  { pattern: /\b(?:run|runs|running|ran|execut(?:e|es|ed|ing))\s+(?:the\s+|its\s+|their\s+|repo\s+|project\s+|arbitrary\s+|untrusted\s+|user[- ]supplied\s+|generated\s+|PR\s+)*(?:tests|test\s+(?:suites?|commands?)|code(?![\s-]+(?:formatt\w*|style\w*|review\w*|lint\w*|coverage|search\w*|quality|snippets?|blocks?|highlight\w*)\b)|scripts?|shell(?:\s+commands?)?|arbitrary\s+commands?)\b/i, label: 'runs code' },
+  // Software agents only: "travel agent" or "booking agent" is not a trust boundary.
+  { pattern: /\b(?:agentic|(?:AI|LLM|coding|code|autonomous|software|dev|chat|GPT|Claude|Codex|browser|computer[- ]use|MCP|sub|multi)[\s-]*agents?(?![\s-]+(?:outputs?|responses?|payloads?|transcripts?|logs?|evals?)\b)|agents?\s+(?:loop|runtime|framework|harness|SDK|tools?))\b/i, label: 'agent' },
   { pattern: /\bwebhooks?\b/i, label: 'webhook' },
   { pattern: /\b(?:CI(?:\/CD)?|continuous\s+integration|GitHub\s+Actions?|(?:CI|GitHub|Actions)\s+workflows?|\.github\/workflows|workflow\s+(?:runs?|files?|jobs?|dispatch))\b/i, label: 'CI/workflow' },
   { pattern: /\b(?:payments?|payouts?|billing|stripe|paypal|refunds?|charg(?:e|es|ing)\s+(?:the\s+)?(?:cards?|customers?|users?))\b/i, label: 'payment' },
@@ -212,7 +215,7 @@ export function validateBrief(content, options = {}) {
   }
 
   // Invariants: rules every flow must obey. Optional, and never counted toward the 3-flow cap.
-  const invariantCount = bulletsOf(getSection(/^Invariants$/i)?.content).length;
+  const invariantCount = filledItems(getSection(/^Invariants$/i)?.content).length;
   if (invariantCount > 5) {
     warnings.push(`invariants: ${invariantCount} bullets, recommended max 5`);
   }
@@ -255,11 +258,8 @@ export function validateBrief(content, options = {}) {
   };
 }
 
-const bulletsOf = (text) => String(text || '')
-  .split(/\r?\n/)
-  .map((l) => l.trim())
-  .filter((l) => /^[-*+]\s+.+/.test(l))
-  .map((l) => l.replace(/^[-*+]\s+/, ''));
+// List items that carry content: init/dump scaffold TODO placeholders don't count.
+const filledItems = (text) => extractListItems(text).filter((b) => !/^TODO\b/i.test(b));
 
 const snip = (s, n = 40) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
@@ -276,7 +276,7 @@ function judgeBrief({ getSection, title, distilled }, warnings) {
     alternatives = 'missing';
     warnings.push('alternatives: no ## Alternatives section; the score checks shape, not whether this already exists');
   } else {
-    const alts = bulletsOf(altSec.content).filter((b) => !/^TODO\b/i.test(b));
+    const alts = filledItems(altSec.content);
     const undiffered = alts.find((b) => !/\bDiffers by:/i.test(b));
     if (alts.length < 2) {
       alternatives = 'thin';
@@ -292,29 +292,34 @@ function judgeBrief({ getSection, title, distilled }, warnings) {
   const activeScope = [title, distilled, getSection(/^Goal$/i)?.content, getSection(/^(Core flows|Public API)$/i)?.content]
     .filter(Boolean)
     .join('\n');
-  const trustTriggers = TRUST_TRIGGERS.filter((t) => t.pattern.test(activeScope)).map((t) => t.label);
-  const trustLines = bulletsOf(getSection(/^(Risks & assumptions|Risks and assumptions)$/i)?.content)
-    .filter((b) => /^TRUST:/i.test(b));
+  const trustTriggers = [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(activeScope)).map((t) => t.label))];
+  // Same heading match as score and export, so a plain "## Risks" counts too.
+  const trustLines = filledItems(getSection(/^Risks/i)?.content).filter((b) => /^TRUST:/i.test(b));
   let trust = 'n/a';
   const scopedOutSafety = [];
   if (trustTriggers.length > 0) {
     trust = trustLines.length > 0 ? 'ok' : 'missing';
     if (trust === 'missing') {
-      warnings.push(`trust: ${trustTriggers.join(', ')} in scope and no TRUST: line in ## Risks & assumptions; answer: (1) who acts, with which credential; (2) what untrusted input reaches it; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing judged change that config`);
+      warnings.push(`trust: ${trustTriggers.join(', ')} in scope, no TRUST: line; say who acts with which credential, what untrusted input reaches it, what crosses a process boundary, and who configures it`);
     }
-    // A TRUST: line that names the control says how v0 is safe without it.
-    if (!trustLines.some((b) => SAFETY_CONTROL.test(b))) {
-      for (const b of safetyBulletsOf(getSection(/^Out of scope/i)?.content)) {
-        scopedOutSafety.push(b);
-        warnings.push(`out-of-scope safety: "${b}" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it`);
-      }
+    // A cut control is answered only by a TRUST: line naming that same control.
+    const answered = new Set(trustLines.flatMap(safetyControlsIn));
+    for (const b of safetyBulletsOf(getSection(/^Out of scope/i)?.content)) {
+      if (safetyControlsIn(b).some((k) => answered.has(k))) continue;
+      scopedOutSafety.push(b);
+      warnings.push(`out-of-scope safety: "${b}" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it`);
     }
   }
 
   return { alternatives, trust, trustTriggers, scopedOutSafety };
 }
 
-const safetyBulletsOf = (outOfScope) => bulletsOf(outOfScope).filter((b) => SAFETY_CONTROL.test(b));
+const safetyBulletsOf = (outOfScope) => extractListItems(outOfScope).filter((b) => SAFETY_CONTROL.test(b));
+
+// The safety controls a line names, folded to one key per family
+// ("Sandboxed" and "sandbox" -> "sandb", "containers" -> "conta").
+const safetyControlsIn = (line) =>
+  [...line.matchAll(new RegExp(SAFETY_CONTROL.source, 'gi'))].map((m) => m[0].toLowerCase().slice(0, 5));
 
 // ---------------------------------------------------------------------------
 // Doability & Rabbit-Hole Scorer (b2i score)
@@ -370,7 +375,7 @@ export function scoreBrief(content) {
   const safetyCut = new Set(valid.judgment.trustTriggers.length > 0 ? safetyBulletsOf(outOfScope) : []);
   const mitigatingScope = outOfScope
     .split(/\r?\n/)
-    .filter((l) => !safetyCut.has(l.trim().replace(/^[-*+]\s+/, '')))
+    .filter((l) => !safetyCut.has(extractListItems(l)[0]))
     .join('\n');
 
   // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
@@ -446,7 +451,7 @@ export function scoreBrief(content) {
   for (const cut of valid.judgment.scopedOutSafety) {
     tips.push(`⚠️ Out-of-scope safety: "${snip(cut)}" is a safety control; keep it or add a TRUST: line (score unchanged)`);
   }
-  if (valid.judgment.trustTriggers.length > 0 && !Object.keys(sections).some((k) => /^Invariants$/i.test(k))) {
+  if (valid.judgment.trustTriggers.length > 0 && filledItems(getSec(/^Invariants$/i)).length === 0) {
     tips.push('💡 Trust boundary in scope: add ## Invariants (≤5 rules every flow must obey, e.g. "the change being judged never edits its own gate").');
   }
 
@@ -921,6 +926,8 @@ export function toI2pArg(value) {
 
 // Optional sections carried through handoff after Notes, in this order.
 const JUDGMENT_SECTIONS = ['Alternatives', 'Invariants'];
+// An unfilled init/dump scaffold (only TODO items) is not carried downstream.
+const isScaffoldOnly = (body) => extractListItems(body).length > 0 && filledItems(body).length === 0;
 
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   let text = prototypeContent;
@@ -963,7 +970,7 @@ export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   // Append the judgment sections if present (prior art, then rules every flow must obey)
   for (const heading of JUDGMENT_SECTIONS) {
     const key = Object.keys(sections).find((k) => new RegExp(`^${heading}$`, 'i').test(k));
-    if (key && sections[key] && !new RegExp(`##\\s+${heading}`, 'i').test(text)) {
+    if (key && sections[key] && !isScaffoldOnly(sections[key]) && !new RegExp(`##\\s+${heading}`, 'i').test(text)) {
       text = text.trimEnd() + `\n\n## ${heading}\n${sections[key]}\n`;
     }
   }
@@ -1229,7 +1236,7 @@ export function cmdHandoff(args) {
 
     for (const heading of JUDGMENT_SECTIONS) {
       const body = section(new RegExp(`^${heading}$`, 'i'));
-      if (body) content += `\n## ${heading}\n${body}\n`;
+      if (body && !isScaffoldOnly(body)) content += `\n## ${heading}\n${body}\n`;
     }
 
     if (isDryRun) {
@@ -1467,8 +1474,8 @@ export function exportBrief(content, options = {}) {
   const outOfScope = extractListItems(getSectionContent(/^Out of scope/i));
   const risks = extractListItems(getSectionContent(/^Risks/i));
   const notes = extractListItems(getSectionContent(/^Notes/i));
-  const alternatives = extractListItems(getSectionContent(/^Alternatives$/i));
-  const invariants = extractListItems(getSectionContent(/^Invariants$/i));
+  const alternatives = filledItems(getSectionContent(/^Alternatives$/i));
+  const invariants = filledItems(getSectionContent(/^Invariants$/i));
   // TRUST: lines stay in `risks` (unchanged) and are also lifted out as security requirements.
   const isTrust = (r) => /^TRUST:/i.test(r);
   const trust = risks.filter(isTrust).map((r) => r.replace(/^TRUST:\s*/i, ''));
@@ -1550,6 +1557,8 @@ export function exportBrief(content, options = {}) {
     out += flows.map((f) => `- [ ] ${f}`).join('\n') + '\n\n';
     out += `### Phase 3: Scope Guard & Hardening\n`;
     out += outOfScope.map((o) => `- [ ] Confirm excluded: ${o}`).join('\n') + '\n';
+    for (const v of invariants) out += `- [ ] Invariant holds in every flow: ${v}\n`;
+    for (const t of trust) out += `- [ ] Security requirement: ${t}\n`;
     out += `- [ ] End-to-end verification of all core flows\n`;
     out += `- [ ] Document quickstart in README\n\n`;
     out += `## Acceptance Criteria\n`;

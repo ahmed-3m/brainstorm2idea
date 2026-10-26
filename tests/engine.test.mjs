@@ -8,6 +8,7 @@ import {
   parseSections,
   validateBrief,
   mergeSectionsIntoPrototype,
+  exportBrief,
   scoreBrief,
   fixBrief,
   introspectI2pTemplates,
@@ -1509,9 +1510,9 @@ distilled: Bot that deploys the main branch to staging when CI is green
       payment: ['charge customers monthly', 'Stripe checkout and refunds'],
     };
     for (const [label, phrases] of Object.entries(cases)) {
-      const trigger = TRUST_TRIGGERS.find((t) => t.label === label);
-      assert.ok(trigger, `trigger "${label}" exists`);
-      for (const p of phrases) assert.match(p, trigger.pattern, `"${p}" fires ${label}`);
+      const triggers = TRUST_TRIGGERS.filter((t) => t.label === label);
+      assert.ok(triggers.length > 0, `trigger "${label}" exists`);
+      for (const p of phrases) assert.ok(triggers.some((t) => t.pattern.test(p)), `"${p}" fires ${label}`);
     }
   });
 });
@@ -1685,5 +1686,70 @@ describe('13. Judgment: new sections survive handoff and export', () => {
       const expected = template === 'api' || template === 'worker';
       assert.equal(/## Invariants\n- TODO: /.test(md), expected, `init --template ${template}`);
     }
+  });
+});
+
+describe('14. Judgment: review fixes', () => {
+  const firing = (text) => [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(text)).map((t) => t.label))];
+
+  test('a TRUST: line about a different control does not answer a scoped-out sandbox', () => {
+    const brief = DEVLOOP.replace(
+      '- ASSUMPTION: Anthropic',
+      '- TRUST: the deploy token lives in a secrets manager and never reaches the LLM\n- ASSUMPTION: Anthropic'
+    );
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.ok(res.warnings.includes(SANDBOX_WARNING), JSON.stringify(res.warnings));
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('TRUST: lines under a plain ## Risks heading count, as in score and export', () => {
+    const brief = DEVLOOP_FIXED.replace('## Risks & assumptions', '## Risks');
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok', JSON.stringify(res.warnings));
+    const json = JSON.parse(exportBrief(brief, { format: 'json' }));
+    assert.equal(json.trust.length, 2);
+  });
+
+  test('a numbered Out of scope list still surfaces a scoped-out safety control', () => {
+    const brief = DEVLOOP.replace('- Sandboxed execution of untrusted code in containers or VMs', '1. Sandboxed execution of untrusted code in containers or VMs');
+    const res = validateBrief(brief);
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('unfilled TODO scaffolds are not content: tip stays, exports and handoff skip them', () => {
+    const scaffold = '## Invariants\n- TODO: A rule every flow must obey (≤5), or delete this section';
+    const brief = withInvariants(DEVLOOP_FIXED, scaffold);
+    assert.ok(scoreBrief(brief).tips.some((t) => t.includes('## Invariants')), 'TODO-only Invariants still earns the tip');
+    const prompt = exportBrief(brief, { format: 'prompt' });
+    assert.doesNotMatch(prompt, /Hard Constraints/);
+    assert.deepEqual(JSON.parse(exportBrief(brief, { format: 'json' })).invariants, []);
+    assert.doesNotMatch(mergeSectionsIntoPrototype('# Prototype spec\n\n## Goal\n-\n', validateBrief(brief)), /## Invariants/);
+
+    const todoAlts = withAlternatives(DEVLOOP, ['- TODO: <Name>: <what it does>. Differs by: <how this brief differs>']);
+    assert.doesNotMatch(exportBrief(todoAlts, { format: 'prd' }), /Alternatives \(Prior Art\)|\*\*TODO\*\*/);
+  });
+
+  test('credential env vars match case-sensitively; lowercase cursors stay quiet', () => {
+    assert.deepEqual(firing('follow the next_token cursor and cap max_token per call'), []);
+    assert.deepEqual(firing('reads GITHUB_TOKEN from the environment'), ['credentials']);
+  });
+
+  test('"run code formatting" and non-software agents raise no trust trigger', () => {
+    assert.deepEqual(firing('Run code formatting on staged files'), []);
+    assert.deepEqual(firing('Let a booking agent reserve tables; a travel agent quotes trips'), []);
+    assert.deepEqual(firing('runs the generated code'), ['runs code']);
+    assert.deepEqual(firing('an LLM agent proposes the fix'), ['agent']);
+  });
+
+  test('the trust warning stays compact', () => {
+    const trust = validateBrief(DEVLOOP).warnings.find((w) => w.startsWith('trust: '));
+    assert.ok(trust.length <= 200, `${trust.length} chars: ${trust}`);
+  });
+
+  test('issues export lists invariants and security requirements', () => {
+    const out = exportBrief(withInvariants(DEVLOOP_FIXED), { format: 'issues' });
+    assert.match(out, /- \[ \] Invariant holds in every flow: The judged PR never configures its own gate/);
+    assert.match(out, /- \[ \] Security requirement: the loop merges with a fine-grained token/);
   });
 });

@@ -55,6 +55,7 @@ Before drafting, resolve:
 2. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
 3. The smallest demoable slice (`## Core flows`, 1–3 items).
 4. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
+5. **Trust boundaries**, when scope merges, pushes, deploys or releases; holds a token, credential, secret or API key; runs tests, code or scripts; or involves an agent, webhook, CI workflow or payment. Answer four questions: (1) who acts, and with which credential; (2) what untrusted input reaches that actor; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing being judged change that config. Spend at most 1 multiple-choice question on them (inside the 3–5 budget, hard cap 8); record the answers as `TRUST:` lines, or `ASSUMPTION:` lines when unconfirmed. Never park a safety control (sandbox, isolation, least privilege, secrets handling) in `## Out of scope` as if it were a feature: keep it, or write a `TRUST:` line saying how v0 is safe without it.
 
 Flows that cannot be demoed belong in `## Out of scope`. If the idea is not software-prototype doable, say so honestly and offer to reshape or output `template: none` (brief-only mode).
 Non-software idea (physical, offline, event): write `template: none`, finish with check + score + export — handoff will politely decline; do not force a software template.
@@ -122,6 +123,7 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 ## Risks & assumptions
 - RISK: ...
 - ASSUMPTION: inferred by the agent, not confirmed by human — strike or keep
+- TRUST: who acts with which credential on what input, and why that is safe (when scope crosses a trust boundary)
 
 ## Notes
 - Free-form: constraints, preferences, data sources (optional, ≤6 bullets)
@@ -130,7 +132,7 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 - Nearest existing tool: what it does. Differs by: how this brief differs (optional, 2–3 bullets)
 ```
 
-The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`.
+The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score.
 
 ## Token Discipline
 - Edits are diff-sized; never re-print the full brief on minor tweaks.

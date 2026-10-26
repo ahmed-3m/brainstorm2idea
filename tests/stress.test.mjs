@@ -219,6 +219,26 @@ distilled: Safe handoff
     }
   });
 
+  test('8b. Spark seeds keep their scores and raise no false trust warnings', () => {
+    // Every seed scored 100 before the judgment checks; the math must not move.
+    // webhook-logger is the one seed with a real trust boundary (it accepts
+    // arbitrary network payloads), so it carries a TRUST: line; the rest must
+    // not trip a trigger at all.
+    for (const spark of SPARK_CATALOG) {
+      const briefMd = generateBriefFromSpark(spark);
+      const scoreResult = scoreBrief(briefMd);
+      assert.equal(scoreResult.score, 100, `Spark ${spark.id} still scores 100`);
+
+      const { judgment, warnings } = validateBrief(briefMd);
+      const expected = spark.id === 'webhook-logger' ? 'ok' : 'n/a';
+      assert.equal(judgment.trust, expected, `Spark ${spark.id} trust (${judgment.trustTriggers.join(', ')})`);
+      assert.ok(
+        !warnings.some((w) => w.startsWith('trust:') || w.startsWith('out-of-scope safety:')),
+        `Spark ${spark.id} has no trust warning: ${JSON.stringify(warnings)}`
+      );
+    }
+  });
+
   test('9. CLI b2i spark command: listing, filtering, and seeding', () => {
     // Basic listing
     const resList = runB2i(['spark']);

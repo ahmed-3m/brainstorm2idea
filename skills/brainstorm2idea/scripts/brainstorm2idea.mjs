@@ -56,6 +56,23 @@ export const RABBIT_HOLES = [
   { pattern: /\b(real.?time (video|audio)|live stream|video call|video chat)\b/i, label: 'Real-time media', fix: 'mock media with static fixtures or text-only fallback' },
 ];
 
+// Scope that crosses a trust boundary: something acts with a credential on
+// input it did not write. Matched against active scope (name, distilled, Goal,
+// flows); a hit asks for TRUST: lines, never a score deduction. Word-bounded and
+// phrase-shaped so "push notifications" or "token counts" stay quiet.
+export const TRUST_TRIGGERS = [
+  { pattern: /\b(?:auto[- ]?merg(?:e|es|ed|ing)|merg(?:e|es|ed|ing)\s+(?:the\s+|a\s+|its\s+|their\s+)?(?:PRs?|pull\s+requests?|MRs?|merge\s+requests?)|(?:git|force)[- ]push(?:es|ed|ing)?|push(?:es|ed|ing)?\s+(?:it\s+|them\s+)?(?:directly\s+)?to\s+(?:main|master|origin|remote|prod(?:uction)?|the\s+(?:default\s+)?branch)|deploy(?:s|ed|ing|ments?)?|releas(?:e|es|ed|ing)\s+(?:it\s+)?to\s+(?:npm|pypi|prod(?:uction)?|users)|publish(?:es|ed|ing)?\s+(?:it\s+|the\s+package\s+)?to\s+(?:npm|pypi|the\s+registry))\b/i, label: 'merge/deploy' },
+  { pattern: /\b(?:credentials?|api[ _-]?keys?|(?:access|auth|bearer|refresh|personal\s+access|deploy|bot|github|npm)[ _-]?tokens?|[A-Z][A-Z0-9_]*_(?:TOKEN|API_KEY|SECRET)|client\s+secrets?|private\s+keys?|ssh\s+keys?|secrets?\s+(?:managers?|stores?|vaults?))\b/i, label: 'credentials' },
+  { pattern: /\b(?:run|runs|running|ran|execut(?:e|es|ed|ing))\s+(?:the\s+|its\s+|their\s+|repo\s+|project\s+|arbitrary\s+|untrusted\s+|user[- ]supplied\s+|generated\s+|PR\s+)*(?:tests|test\s+(?:suites?|commands?)|code|scripts?|shell(?:\s+commands?)?|arbitrary\s+commands?)\b/i, label: 'runs code' },
+  { pattern: /(?<!user[- ])\b(?:agentic|agents?)\b(?![\s-]+(?:outputs?|responses?|payloads?|transcripts?|logs?|evals?)\b)/i, label: 'agent' },
+  { pattern: /\bwebhooks?\b/i, label: 'webhook' },
+  { pattern: /\b(?:CI(?:\/CD)?|continuous\s+integration|GitHub\s+Actions?|(?:CI|GitHub|Actions)\s+workflows?|\.github\/workflows|workflow\s+(?:runs?|files?|jobs?|dispatch))\b/i, label: 'CI/workflow' },
+  { pattern: /\b(?:payments?|payouts?|billing|stripe|paypal|refunds?|charg(?:e|es|ing)\s+(?:the\s+)?(?:cards?|customers?|users?))\b/i, label: 'payment' },
+];
+
+// An Out-of-scope bullet naming one of these is cutting a safety control, not a feature.
+const SAFETY_CONTROL = /\b(?:sandbox(?:ed|es|ing)?|isolat(?:e|ed|es|ing|ion)|containers?|containeri[sz](?:e|ed|ation)|untrusted\s+(?:code|input)|least[- ]privilege|permissions?|secrets?)\b/i;
+
 // ---------------------------------------------------------------------------
 // 7 Hard Checks Validator
 // ---------------------------------------------------------------------------
@@ -176,8 +193,8 @@ export function validateBrief(content, options = {}) {
       .map((l) => l.trim())
       .filter((l) => /^[-*+]\s+/.test(l));
     for (const l of lines) {
-      if (!/^[-*+]\s+(RISK:|ASSUMPTION:)/i.test(l)) {
-        warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK: or ASSUMPTION:`);
+      if (!/^[-*+]\s+(RISK:|ASSUMPTION:|TRUST:)/i.test(l)) {
+        warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK:, ASSUMPTION: or TRUST:`);
         break;
       }
     }
@@ -210,7 +227,7 @@ export function validateBrief(content, options = {}) {
   }
 
   // Judgment checks: warnings beside the 7 hard checks, never failures.
-  const judgment = judgeBrief(getSection, warnings);
+  const judgment = judgeBrief({ getSection, title, distilled: meta.distilled }, warnings);
 
   const passed = 7 - errors.length;
   const ok = errors.length === 0;
@@ -245,7 +262,7 @@ const snip = (s, n = 40) => (s.length > n ? `${s.slice(0, n)}…` : s);
  * well-formed clone of an existing tool scores 100. These checks push their
  * findings onto `warnings` and return a compact verdict per check.
  */
-function judgeBrief(getSection, warnings) {
+function judgeBrief({ getSection, title, distilled }, warnings) {
   // Prior art: the nearest existing tools, and how this brief differs from each.
   let alternatives = 'ok';
   const altSec = getSection(/^Alternatives$/i);
@@ -264,8 +281,34 @@ function judgeBrief(getSection, warnings) {
     }
   }
 
-  return { alternatives };
+  // Trust boundaries: scope that merges, deploys, holds credentials or runs code
+  // needs TRUST: lines saying who acts on what, and why that is safe.
+  const activeScope = [title, distilled, getSection(/^Goal$/i)?.content, getSection(/^(Core flows|Public API)$/i)?.content]
+    .filter(Boolean)
+    .join('\n');
+  const trustTriggers = TRUST_TRIGGERS.filter((t) => t.pattern.test(activeScope)).map((t) => t.label);
+  const trustLines = bulletsOf(getSection(/^(Risks & assumptions|Risks and assumptions)$/i)?.content)
+    .filter((b) => /^TRUST:/i.test(b));
+  let trust = 'n/a';
+  const scopedOutSafety = [];
+  if (trustTriggers.length > 0) {
+    trust = trustLines.length > 0 ? 'ok' : 'missing';
+    if (trust === 'missing') {
+      warnings.push(`trust: ${trustTriggers.join(', ')} in scope and no TRUST: line in ## Risks & assumptions; answer: (1) who acts, with which credential; (2) what untrusted input reaches it; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing judged change that config`);
+    }
+    // A TRUST: line that names the control says how v0 is safe without it.
+    if (!trustLines.some((b) => SAFETY_CONTROL.test(b))) {
+      for (const b of safetyBulletsOf(getSection(/^Out of scope/i)?.content)) {
+        scopedOutSafety.push(b);
+        warnings.push(`out-of-scope safety: "${b}" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it`);
+      }
+    }
+  }
+
+  return { alternatives, trust, trustTriggers, scopedOutSafety };
 }
+
+const safetyBulletsOf = (outOfScope) => bulletsOf(outOfScope).filter((b) => SAFETY_CONTROL.test(b));
 
 // ---------------------------------------------------------------------------
 // Doability & Rabbit-Hole Scorer (b2i score)
@@ -315,13 +358,20 @@ export function scoreBrief(content) {
   const activeScope = `${meta.name} ${goal} ${flows}`;
   const detectedRabbitHoles = [];
   const mitigatedRabbitHoles = [];
+  // With a trust boundary in scope, a scoped-out safety control is a gap, not a
+  // mitigation: those bullets never credit a rabbit hole as quarantined.
+  const safetyCut = new Set(valid.judgment.trustTriggers.length > 0 ? safetyBulletsOf(outOfScope) : []);
+  const mitigatingScope = outOfScope
+    .split(/\r?\n/)
+    .filter((l) => !safetyCut.has(l.trim().replace(/^[-*+]\s+/, '')))
+    .join('\n');
 
   // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
   // when "PayPal" is listed in Out of scope (both match the payments pattern).
   for (const rh of RABBIT_HOLES) {
     if (rh.pattern.test(activeScope)) {
       detectedRabbitHoles.push(rh);
-    } else if (rh.pattern.test(outOfScope)) {
+    } else if (rh.pattern.test(mitigatingScope)) {
       mitigatedRabbitHoles.push(rh);
     }
   }

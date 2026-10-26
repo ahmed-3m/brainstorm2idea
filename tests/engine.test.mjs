@@ -13,6 +13,7 @@ import {
   introspectI2pTemplates,
   HELP,
   RABBIT_HOLES,
+  TRUST_TRIGGERS,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
   VERSION,
@@ -1403,5 +1404,114 @@ describe('9. Judgment: ## Alternatives (prior art)', () => {
     assert.equal(ok.code, 0);
     assert.match(ok.stdout, /Brainstorm2idea check — PASS \(7\/7\)/);
     assert.ok(ok.stdout.includes(`note: ${ALTERNATIVES_MISSING}`), ok.stdout);
+  });
+});
+
+const SANDBOX_WARNING = 'out-of-scope safety: "Sandboxed execution of untrusted code in containers or VMs" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it';
+
+describe('10. Judgment: trust boundaries', () => {
+  test('TRUST_TRIGGERS is exported in the RABBIT_HOLES shape', () => {
+    assert.ok(Array.isArray(TRUST_TRIGGERS) && TRUST_TRIGGERS.length > 0);
+    for (const t of TRUST_TRIGGERS) {
+      assert.ok(t.pattern instanceof RegExp, 'pattern is a RegExp');
+      assert.equal(typeof t.label, 'string');
+    }
+  });
+
+  test('DevLoop: merge + runs code in scope, no TRUST: line, sandbox scoped out', () => {
+    const res = validateBrief(DEVLOOP);
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.equal(res.judgment.trust, 'missing');
+    assert.deepEqual(res.judgment.trustTriggers, ['merge/deploy', 'runs code']);
+    const trust = res.warnings.find((w) => w.startsWith('trust: '));
+    assert.ok(trust, JSON.stringify(res.warnings));
+    for (const q of ['who acts', 'credential', 'untrusted input', 'boundary', 'configures']) {
+      assert.ok(trust.includes(q), `trust warning names "${q}": ${trust}`);
+    }
+    assert.ok(res.warnings.includes(SANDBOX_WARNING), JSON.stringify(res.warnings));
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('the fixed DevLoop variant has no judgment warnings at all', () => {
+    const res = validateBrief(DEVLOOP_FIXED);
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.warnings, []);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.deepEqual(res.judgment.scopedOutSafety, []);
+  });
+
+  test('TRUST: lines satisfy the RISK:/ASSUMPTION: prefix rule', () => {
+    const res = validateBrief(DEVLOOP_FIXED.replace(/- RISK: [^\n]*\n/g, '').replace(/- ASSUMPTION: [^\n]*\n/g, ''));
+    assert.ok(!res.warnings.some((w) => w.startsWith('risks & assumptions:')), JSON.stringify(res.warnings));
+  });
+
+  test('a TRUST: line about the scoped-out control answers the safety warning', () => {
+    const brief = DEVLOOP.replace(
+      '- ASSUMPTION: Anthropic',
+      '- TRUST: no sandbox in v0, so the loop only runs on a disposable VM with no credentials\n- ASSUMPTION: Anthropic'
+    );
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.ok(!res.warnings.some((w) => w.startsWith('out-of-scope safety:')), JSON.stringify(res.warnings));
+  });
+
+  test('a scoped-out safety control is never reported as a mitigated rabbit hole', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: worker
+distilled: Bot that deploys the main branch to staging when CI is green
+---
+# ShipBot
+
+## Goal
+- Deploy main to staging without a human
+
+## Core flows
+1. Poll CI for green builds on main and deploy that commit
+
+## Out of scope
+- Authorization scopes and least-privilege permissions for the deploy key
+- A web dashboard
+
+## Risks & assumptions
+- RISK: a bad build reaches staging before anyone looks
+`;
+    const res = scoreBrief(brief);
+    assert.equal(res.ok, true);
+    assert.equal(res.score, 100, 'doability math is unchanged');
+    assert.ok(!res.categories.rabbitHoles.mitigated.includes('OAuth/SSO'), JSON.stringify(res.categories.rabbitHoles));
+    assert.ok(!res.tips.some((t) => t.includes('Mitigated OAuth/SSO')), JSON.stringify(res.tips));
+    assert.ok(res.warnings.some((w) => w.startsWith('out-of-scope safety: "Authorization scopes')), JSON.stringify(res.warnings));
+  });
+
+  test('trigger patterns are word-bounded: push notifications, merged branches and token counts stay quiet', () => {
+    const scope = [
+      'Send push notifications when a plant needs water',
+      'Identify fully merged branches ready for pruning',
+      'Display side-by-side terminal diff showing token counts',
+      'Running test inputs against 2 prompt variants',
+      'Validate agent response payloads against structured assertions',
+      'Release notes and a git checkout helper for the user-agent header',
+    ].join('\n');
+    const hits = TRUST_TRIGGERS.filter((t) => t.pattern.test(scope)).map((t) => t.label);
+    assert.deepEqual(hits, []);
+  });
+
+  test('trigger patterns cover merge, credentials, code execution, agents, webhooks, CI and payments', () => {
+    const cases = {
+      'merge/deploy': ['open a PR and auto-merge it', 'merges the pull request', 'deploy to staging', 'git push to main', 'publish to npm'],
+      credentials: ['store the GitHub token', 'reads OPENAI_API_KEY', 'uses AWS credentials', 'an API key per user'],
+      'runs code': ['runs the test command', 'executes untrusted code', 'run user-supplied scripts'],
+      agent: ['a coding agent opens PRs', 'agentic loop'],
+      webhook: ['receives a webhook from GitHub'],
+      'CI/workflow': ['a GitHub Actions workflow', 'waits for CI'],
+      payment: ['charge customers monthly', 'Stripe checkout and refunds'],
+    };
+    for (const [label, phrases] of Object.entries(cases)) {
+      const trigger = TRUST_TRIGGERS.find((t) => t.label === label);
+      assert.ok(trigger, `trigger "${label}" exists`);
+      for (const p of phrases) assert.match(p, trigger.pattern, `"${p}" fires ${label}`);
+    }
   });
 });

@@ -264,6 +264,30 @@ describe('Canonical Benchmark Specs (5 Scenarios)', () => {
   });
 });
 
+describe('Benchmark briefs vs. the trust-boundary check', () => {
+  // None of the 5 scenarios merges, deploys, runs code or holds credentials in
+  // its active scope (PawsOnDemand's Stripe sits in Out of scope).
+  const scenarios = {
+    PlantPulse: SCENARIO_1_PLANTPULSE,
+    PawsOnDemand: SCENARIO_2_PAWSONDEMAND,
+    CollabMark: SCENARIO_3_COLLABMARK,
+    'kv-log-parse': SCENARIO_4_KVLOGPARSE,
+    'Kreuzberg Book Swap Cafe': SCENARIO_5_KREUZBERG_CAFE,
+  };
+
+  for (const [name, brief] of Object.entries(scenarios)) {
+    it(`${name}: trust n/a, no trust warning, score unchanged`, () => {
+      const valid = validateBrief(brief);
+      assert.equal(valid.judgment.trust, 'n/a');
+      assert.ok(
+        !valid.warnings.some((w) => w.startsWith('trust:') || w.startsWith('out-of-scope safety:')),
+        JSON.stringify(valid.warnings)
+      );
+      assert.equal(scoreBrief(brief).score, 100);
+    });
+  }
+});
+
 describe('Export Function (exportBrief)', () => {
   it('exports format "prompt" with comprehensive kickoff instructions', () => {
     const out = exportBrief(SCENARIO_1_PLANTPULSE, { format: 'prompt' });

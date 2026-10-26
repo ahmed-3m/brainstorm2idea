@@ -612,6 +612,7 @@ export const SPARK_CATALOG = [
     ],
     risks: [
       'ASSUMPTION: Payloads are JSON or plain text',
+      'TRUST: listens on localhost only and never executes or forwards payloads; anyone on this machine can post, so logged bodies are untrusted text',
     ],
     notes: [
       'Invaluable for debugging third-party webhook integrations locally',

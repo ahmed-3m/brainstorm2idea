@@ -8,11 +8,13 @@ import {
   parseSections,
   validateBrief,
   mergeSectionsIntoPrototype,
+  exportBrief,
   scoreBrief,
   fixBrief,
   introspectI2pTemplates,
   HELP,
   RABBIT_HOLES,
+  TRUST_TRIGGERS,
   VALID_TEMPLATES,
   SCHEMA_VERSION,
   VERSION,
@@ -775,7 +777,7 @@ distilled: Store with payment processing
   test('b2i score CLI outputs human verdict with grade', () => {
     const res = runB2i(['score', join(FIXTURES_DIR, 'valid-brief.md')]);
     assert.equal(res.code, 0);
-    assert.match(res.stdout, /Brainstorm2idea score — \d+\/100 \(Grade/);
+    assert.match(res.stdout, /Brainstorm2idea score — Doability \d+\/100 \(Grade/);
   });
 
   test('b2i score --json CLI outputs machine-readable breakdown', () => {
@@ -1335,5 +1337,419 @@ distilled: Lightweight shared plant watering tracker showing days until next wat
     const res = runB2i(['handoff']);
     assert.equal(res.code, 1);
     assert.match(res.all, /usage: b2i handoff <dir>.*\(prefer a fresh, empty directory\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judgment checks: prior art, trust boundaries, invariants. All are warnings or
+// tips beside the 7 hard checks; the doability score stays a pure shape score.
+// DevLoop is a real brief that scored 100/100 while cloning existing tools and
+// auto-merging with tests run outside any sandbox.
+// ---------------------------------------------------------------------------
+
+// Fixtures check out with CRLF on Windows; the assertions below expect LF.
+const DEVLOOP = readFileSync(join(FIXTURES_DIR, 'devloop-brief.md'), 'utf8').replace(/\r\n/g, '\n');
+const DEVLOOP_FIXED = readFileSync(join(FIXTURES_DIR, 'devloop-fixed.md'), 'utf8').replace(/\r\n/g, '\n');
+const ALTERNATIVES_MISSING = 'alternatives: no ## Alternatives section; the score checks shape, not whether this already exists';
+const withAlternatives = (brief, bullets) => `${brief.trimEnd()}\n\n## Alternatives\n${bullets.join('\n')}\n`;
+
+describe('9. Judgment: ## Alternatives (prior art)', () => {
+  test('DevLoop still passes 7/7 but warns that prior art was never checked', () => {
+    const res = validateBrief(DEVLOOP);
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.equal(res.total, 7);
+    assert.ok(res.warnings.includes(ALTERNATIVES_MISSING), JSON.stringify(res.warnings));
+    assert.equal(res.judgment.alternatives, 'missing');
+  });
+
+  test('two bullets that each say how this differs satisfy the check', () => {
+    const res = validateBrief(DEVLOOP_FIXED);
+    assert.equal(res.ok, true);
+    assert.ok(!res.warnings.some((w) => w.startsWith('alternatives:')), JSON.stringify(res.warnings));
+    assert.equal(res.judgment.alternatives, 'ok');
+  });
+
+  test('one bullet is thin and names the count', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, ['- OpenHands: open-source coding agent. Differs by: no agent runtime']));
+    assert.equal(res.ok, true);
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => /^alternatives: 1 bullet\b/.test(w)), JSON.stringify(res.warnings));
+  });
+
+  test('a bullet without "Differs by:" is thin and names that bullet', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, [
+      '- OpenHands: open-source coding agent. Differs by: no agent runtime',
+      '- Devin: hosted autonomous engineer',
+    ]));
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => w.startsWith('alternatives: ') && w.includes('Devin') && w.includes('Differs by:')), JSON.stringify(res.warnings));
+  });
+
+  test('a TODO placeholder does not count as an alternative', () => {
+    const res = validateBrief(withAlternatives(DEVLOOP, ['- TODO: <Name>: <what it does>. Differs by: <how this brief differs>']));
+    assert.equal(res.judgment.alternatives, 'thin');
+    assert.ok(res.warnings.some((w) => /^alternatives: 0 bullets\b/.test(w)), JSON.stringify(res.warnings));
+  });
+
+  test('check prints at most 3 notes, failures first', () => {
+    // 5 failing checks plus a judgment warning: only 3 lines of notes.
+    const res = runB2i(['check', '-'], {}, '---\nschema: b2i-brief@1\n---\n# Bare\n');
+    assert.equal(res.code, 1);
+    const notes = res.stdout.split(/\r?\n/).filter((l) => /^ {2}\S/.test(l) && !l.includes('more note'));
+    assert.equal(notes.length, 3, res.stdout);
+    assert.ok(!notes.some((l) => l.includes('note:')), 'failures fill the 3 slots before any warning');
+    assert.match(res.stdout, /\(\+\d+ more notes?; b2i check --json lists all\)/);
+
+    const ok = runB2i(['check', join(FIXTURES_DIR, 'devloop-brief.md')]);
+    assert.equal(ok.code, 0);
+    assert.match(ok.stdout, /Brainstorm2idea check — PASS \(7\/7\)/);
+    assert.ok(ok.stdout.includes(`note: ${ALTERNATIVES_MISSING}`), ok.stdout);
+  });
+});
+
+const SANDBOX_WARNING = 'out-of-scope safety: "Sandboxed execution of untrusted code in containers or VMs" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it';
+
+describe('10. Judgment: trust boundaries', () => {
+  test('TRUST_TRIGGERS is exported in the RABBIT_HOLES shape', () => {
+    assert.ok(Array.isArray(TRUST_TRIGGERS) && TRUST_TRIGGERS.length > 0);
+    for (const t of TRUST_TRIGGERS) {
+      assert.ok(t.pattern instanceof RegExp, 'pattern is a RegExp');
+      assert.equal(typeof t.label, 'string');
+    }
+  });
+
+  test('DevLoop: merge + runs code in scope, no TRUST: line, sandbox scoped out', () => {
+    const res = validateBrief(DEVLOOP);
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.equal(res.judgment.trust, 'missing');
+    assert.deepEqual(res.judgment.trustTriggers, ['merge/deploy', 'runs code']);
+    const trust = res.warnings.find((w) => w.startsWith('trust: '));
+    assert.ok(trust, JSON.stringify(res.warnings));
+    for (const q of ['who acts', 'credential', 'untrusted input', 'boundary', 'configures']) {
+      assert.ok(trust.includes(q), `trust warning names "${q}": ${trust}`);
+    }
+    assert.ok(res.warnings.includes(SANDBOX_WARNING), JSON.stringify(res.warnings));
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('the fixed DevLoop variant has no judgment warnings at all', () => {
+    const res = validateBrief(DEVLOOP_FIXED);
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.warnings, []);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.deepEqual(res.judgment.scopedOutSafety, []);
+  });
+
+  test('TRUST: lines satisfy the RISK:/ASSUMPTION: prefix rule', () => {
+    const res = validateBrief(DEVLOOP_FIXED.replace(/- RISK: [^\n]*\n/g, '').replace(/- ASSUMPTION: [^\n]*\n/g, ''));
+    assert.ok(!res.warnings.some((w) => w.startsWith('risks & assumptions:')), JSON.stringify(res.warnings));
+  });
+
+  test('a TRUST: line about the scoped-out control answers the safety warning', () => {
+    const brief = DEVLOOP.replace(
+      '- ASSUMPTION: Anthropic',
+      '- TRUST: no sandbox in v0, so the loop only runs on a disposable VM with no credentials\n- ASSUMPTION: Anthropic'
+    );
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.ok(!res.warnings.some((w) => w.startsWith('out-of-scope safety:')), JSON.stringify(res.warnings));
+  });
+
+  test('a scoped-out safety control is never reported as a mitigated rabbit hole', () => {
+    const brief = `---
+schema: b2i-brief@1
+template: worker
+distilled: Bot that deploys the main branch to staging when CI is green
+---
+# ShipBot
+
+## Goal
+- Deploy main to staging without a human
+
+## Core flows
+1. Poll CI for green builds on main and deploy that commit
+
+## Out of scope
+- Authorization scopes and least-privilege permissions for the deploy key
+- A web dashboard
+
+## Risks & assumptions
+- RISK: a bad build reaches staging before anyone looks
+`;
+    const res = scoreBrief(brief);
+    assert.equal(res.ok, true);
+    assert.equal(res.score, 100, 'doability math is unchanged');
+    assert.ok(!res.categories.rabbitHoles.mitigated.includes('OAuth/SSO'), JSON.stringify(res.categories.rabbitHoles));
+    assert.ok(!res.tips.some((t) => t.includes('Mitigated OAuth/SSO')), JSON.stringify(res.tips));
+    assert.ok(res.warnings.some((w) => w.startsWith('out-of-scope safety: "Authorization scopes')), JSON.stringify(res.warnings));
+  });
+
+  test('trigger patterns are word-bounded: push notifications, merged branches and token counts stay quiet', () => {
+    const scope = [
+      'Send push notifications when a plant needs water',
+      'Identify fully merged branches ready for pruning',
+      'Display side-by-side terminal diff showing token counts',
+      'Running test inputs against 2 prompt variants',
+      'Validate agent response payloads against structured assertions',
+      'Release notes and a git checkout helper for the user-agent header',
+    ].join('\n');
+    const hits = TRUST_TRIGGERS.filter((t) => t.pattern.test(scope)).map((t) => t.label);
+    assert.deepEqual(hits, []);
+  });
+
+  test('trigger patterns cover merge, credentials, code execution, agents, webhooks, CI and payments', () => {
+    const cases = {
+      'merge/deploy': ['open a PR and auto-merge it', 'merges the pull request', 'deploy to staging', 'git push to main', 'publish to npm'],
+      credentials: ['store the GitHub token', 'reads OPENAI_API_KEY', 'uses AWS credentials', 'an API key per user'],
+      'runs code': ['runs the test command', 'executes untrusted code', 'run user-supplied scripts'],
+      agent: ['a coding agent opens PRs', 'agentic loop'],
+      webhook: ['receives a webhook from GitHub'],
+      'CI/workflow': ['a GitHub Actions workflow', 'waits for CI'],
+      payment: ['charge customers monthly', 'Stripe checkout and refunds'],
+    };
+    for (const [label, phrases] of Object.entries(cases)) {
+      const triggers = TRUST_TRIGGERS.filter((t) => t.label === label);
+      assert.ok(triggers.length > 0, `trigger "${label}" exists`);
+      for (const p of phrases) assert.ok(triggers.some((t) => t.pattern.test(p)), `"${p}" fires ${label}`);
+    }
+  });
+});
+
+const INVARIANTS = [
+  '## Invariants',
+  '- The judged PR never configures its own gate',
+  '- Only the exact head SHA that passed tests is merged',
+].join('\n');
+const withInvariants = (brief, block = INVARIANTS) => `${brief.trimEnd()}\n\n${block}\n`;
+
+describe('11. Judgment: ## Invariants', () => {
+  test('invariants sit beside the 3-flow cap and never fail check', () => {
+    const res = validateBrief(withInvariants(DEVLOOP_FIXED));
+    assert.equal(res.ok, true);
+    assert.equal(res.passed, 7);
+    assert.deepEqual(res.warnings, []);
+  });
+
+  test('more than 5 invariants warns', () => {
+    const six = ['## Invariants', ...Array.from({ length: 6 }, (_, i) => `- Rule ${i + 1} holds in every flow`)].join('\n');
+    const res = validateBrief(withInvariants(DEVLOOP_FIXED, six));
+    assert.equal(res.ok, true);
+    assert.ok(res.warnings.includes('invariants: 6 bullets, recommended max 5'), JSON.stringify(res.warnings));
+  });
+
+  test('a trust trigger without ## Invariants earns a tip, not a warning', () => {
+    const val = validateBrief(DEVLOOP_FIXED);
+    assert.ok(!val.warnings.some((w) => w.startsWith('invariants')), JSON.stringify(val.warnings));
+    const sc = scoreBrief(DEVLOOP_FIXED);
+    assert.ok(sc.tips.some((t) => t.includes('## Invariants')), JSON.stringify(sc.tips));
+
+    const withRules = scoreBrief(withInvariants(DEVLOOP_FIXED));
+    assert.ok(!withRules.tips.some((t) => t.includes('## Invariants')), JSON.stringify(withRules.tips));
+  });
+
+  test('no trust trigger, no invariants tip', () => {
+    const sc = scoreBrief(readFileSync(join(FIXTURES_DIR, 'valid-brief.md'), 'utf8'));
+    assert.ok(!sc.tips.some((t) => t.includes('## Invariants')), JSON.stringify(sc.tips));
+  });
+});
+
+describe('12. Judgment: honest score output', () => {
+  test('DevLoop: doability stays 100 and judgment sits beside it in --json', () => {
+    const sc = scoreBrief(DEVLOOP);
+    assert.equal(sc.ok, true);
+    assert.equal(sc.score, 100);
+    assert.equal(sc.letterGrade, 'A');
+    assert.equal(sc.grade, 'EXCELLENT');
+    assert.deepEqual(sc.breakdown, { scope: 30, rabbitHoles: 40, alignment: 30 });
+    assert.equal(sc.judgment.alternatives, 'missing');
+    assert.equal(sc.judgment.trust, 'missing');
+    assert.deepEqual(sc.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-brief.md'), '--json']);
+    assert.equal(res.code, 0);
+    const json = JSON.parse(res.stdout);
+    for (const key of ['ok', 'score', 'grade', 'letterGrade', 'breakdown', 'categories', 'warnings', 'tips', 'meta']) {
+      assert.ok(key in json, `existing key "${key}" is kept`);
+    }
+    assert.equal(json.judgment.alternatives, 'missing');
+    assert.equal(json.judgment.trust, 'missing');
+  });
+
+  test('human output labels the number Doability and names what was not checked', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-brief.md')]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea score — Doability 100\/100 \(Grade A - EXCELLENT\)/);
+    assert.ok(
+      res.stdout.includes('Not checked: prior art (no ## Alternatives), trust boundaries (merge/deploy, runs code in scope, no TRUST: lines).'),
+      res.stdout
+    );
+  });
+
+  test('nothing extra when both checks are satisfied', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-fixed.md')]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Doability 100\/100/);
+    assert.doesNotMatch(res.stdout, /Not checked/);
+    const sc = scoreBrief(DEVLOOP_FIXED);
+    assert.deepEqual(
+      { alternatives: sc.judgment.alternatives, trust: sc.judgment.trust, scopedOutSafety: sc.judgment.scopedOutSafety },
+      { alternatives: 'ok', trust: 'ok', scopedOutSafety: [] }
+    );
+  });
+
+  test('a brief with no trust trigger only reports prior art', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'valid-brief.md')]);
+    assert.equal(res.code, 0);
+    assert.ok(res.stdout.includes('Not checked: prior art (no ## Alternatives).'), res.stdout);
+    assert.doesNotMatch(res.stdout, /trust boundaries/);
+  });
+});
+
+describe('13. Judgment: new sections survive handoff and export', () => {
+  const FULL = withInvariants(DEVLOOP_FIXED);
+
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('mergeSectionsIntoPrototype appends Alternatives and Invariants', () => {
+    const merged = mergeSectionsIntoPrototype('# Prototype spec — DevLoop\n\n## Goal\n-\n\n## Core flows\n1.\n\n## Out of scope\n-\n', validateBrief(FULL));
+    assert.match(merged, /## Alternatives\n- GitHub Copilot coding agent: [^\n]*Differs by:/);
+    assert.match(merged, /## Invariants\n- The judged PR never configures its own gate/);
+  });
+
+  test('handoff --target raw carries Alternatives and Invariants into PROTOTYPE.md', () => {
+    const brief = join(TMP_DIR, 'devloop.md');
+    writeFileSync(brief, FULL, 'utf8');
+    const res = runB2i(['handoff', join(TMP_DIR, 'devloop'), '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 0, res.all);
+    const proto = readFileSync(join(TMP_DIR, 'devloop', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /## Alternatives\n- GitHub Copilot coding agent/);
+    assert.match(proto, /## Invariants\n- The judged PR never configures its own gate/);
+    assert.match(proto, /- TRUST: the loop merges with a fine-grained token/);
+  });
+
+  test('export prompt: invariants are hard constraints and TRUST lines are security requirements', () => {
+    const res = runB2i(['export', '-', '--format', 'prompt'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    assert.match(res.stdout, /## Hard Constraints \(Invariants — every flow must obey\)\n- The judged PR never configures its own gate/);
+    assert.match(res.stdout, /## Security Requirements \(Trust Boundaries\)\n- 🔒 the loop merges with a fine-grained token/);
+    const risks = res.stdout.split('## Key Assumptions & Risks')[1].split('\n## ')[0];
+    assert.doesNotMatch(risks, /TRUST:/, 'TRUST lines move to the security section');
+  });
+
+  test('export prd adds Alternatives', () => {
+    const res = runB2i(['export', '-', '--format', 'prd'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    assert.match(res.stdout, /### \d+\. Alternatives \(Prior Art\)\n- \*\*GitHub Copilot coding agent\*\*: /);
+  });
+
+  test('export json includes alternatives, invariants and trust', () => {
+    const res = runB2i(['export', '-', '--format', 'json'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    const json = JSON.parse(res.stdout);
+    assert.equal(json.alternatives.length, 2);
+    assert.match(json.alternatives[0], /^GitHub Copilot coding agent: .*Differs by:/);
+    assert.deepEqual(json.invariants, ['The judged PR never configures its own gate', 'Only the exact head SHA that passed tests is merged']);
+    assert.equal(json.trust.length, 2);
+    assert.match(json.trust[0], /^the loop merges with a fine-grained token/);
+    assert.equal(json.risks.length, 7, 'existing risks key is unchanged');
+  });
+
+  test('init and dump scaffold an empty ## Alternatives with a TODO', () => {
+    for (const template of VALID_TEMPLATES) {
+      const out = join(TMP_DIR, `init-${template}.md`);
+      const res = runB2i(['init', 'demo', '--template', template, '--output', out]);
+      assert.equal(res.code, 0, res.all);
+      const md = readFileSync(out, 'utf8');
+      assert.match(md, /## Alternatives\n- TODO: /, `init --template ${template}`);
+      assert.equal(validateBrief(md).ok, true);
+      assert.equal(validateBrief(md).judgment.alternatives, 'thin');
+    }
+    const dump = runB2i(['dump', '-'], {}, 'A tool that renames photos by the date they were taken.');
+    assert.equal(dump.code, 0, dump.all);
+    assert.match(dump.stdout, /## Alternatives\n- TODO: /);
+  });
+
+  test('init adds a TODO ## Invariants only for templates that act unattended or serve requests', () => {
+    for (const template of VALID_TEMPLATES) {
+      const out = join(TMP_DIR, `inv-${template}.md`);
+      runB2i(['init', 'demo', '--template', template, '--output', out]);
+      const md = readFileSync(out, 'utf8');
+      const expected = template === 'api' || template === 'worker';
+      assert.equal(/## Invariants\n- TODO: /.test(md), expected, `init --template ${template}`);
+    }
+  });
+});
+
+describe('14. Judgment: review fixes', () => {
+  const firing = (text) => [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(text)).map((t) => t.label))];
+
+  test('a TRUST: line about a different control does not answer a scoped-out sandbox', () => {
+    const brief = DEVLOOP.replace(
+      '- ASSUMPTION: Anthropic',
+      '- TRUST: the deploy token lives in a secrets manager and never reaches the LLM\n- ASSUMPTION: Anthropic'
+    );
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok');
+    assert.ok(res.warnings.includes(SANDBOX_WARNING), JSON.stringify(res.warnings));
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('TRUST: lines under a plain ## Risks heading count, as in score and export', () => {
+    const brief = DEVLOOP_FIXED.replace('## Risks & assumptions', '## Risks');
+    const res = validateBrief(brief);
+    assert.equal(res.judgment.trust, 'ok', JSON.stringify(res.warnings));
+    const json = JSON.parse(exportBrief(brief, { format: 'json' }));
+    assert.equal(json.trust.length, 2);
+  });
+
+  test('a numbered Out of scope list still surfaces a scoped-out safety control', () => {
+    const brief = DEVLOOP.replace('- Sandboxed execution of untrusted code in containers or VMs', '1. Sandboxed execution of untrusted code in containers or VMs');
+    const res = validateBrief(brief);
+    assert.deepEqual(res.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+  });
+
+  test('unfilled TODO scaffolds are not content: tip stays, exports and handoff skip them', () => {
+    const scaffold = '## Invariants\n- TODO: A rule every flow must obey (≤5), or delete this section';
+    const brief = withInvariants(DEVLOOP_FIXED, scaffold);
+    assert.ok(scoreBrief(brief).tips.some((t) => t.includes('## Invariants')), 'TODO-only Invariants still earns the tip');
+    const prompt = exportBrief(brief, { format: 'prompt' });
+    assert.doesNotMatch(prompt, /Hard Constraints/);
+    assert.deepEqual(JSON.parse(exportBrief(brief, { format: 'json' })).invariants, []);
+    assert.doesNotMatch(mergeSectionsIntoPrototype('# Prototype spec\n\n## Goal\n-\n', validateBrief(brief)), /## Invariants/);
+
+    const todoAlts = withAlternatives(DEVLOOP, ['- TODO: <Name>: <what it does>. Differs by: <how this brief differs>']);
+    assert.doesNotMatch(exportBrief(todoAlts, { format: 'prd' }), /Alternatives \(Prior Art\)|\*\*TODO\*\*/);
+  });
+
+  test('credential env vars match case-sensitively; lowercase cursors stay quiet', () => {
+    assert.deepEqual(firing('follow the next_token cursor and cap max_token per call'), []);
+    assert.deepEqual(firing('reads GITHUB_TOKEN from the environment'), ['credentials']);
+  });
+
+  test('"run code formatting" and non-software agents raise no trust trigger', () => {
+    assert.deepEqual(firing('Run code formatting on staged files'), []);
+    assert.deepEqual(firing('Let a booking agent reserve tables; a travel agent quotes trips'), []);
+    assert.deepEqual(firing('runs the generated code'), ['runs code']);
+    assert.deepEqual(firing('an LLM agent proposes the fix'), ['agent']);
+  });
+
+  test('the trust warning stays compact', () => {
+    const trust = validateBrief(DEVLOOP).warnings.find((w) => w.startsWith('trust: '));
+    assert.ok(trust.length <= 200, `${trust.length} chars: ${trust}`);
+  });
+
+  test('issues export lists invariants and security requirements', () => {
+    const out = exportBrief(withInvariants(DEVLOOP_FIXED), { format: 'issues' });
+    assert.match(out, /- \[ \] Invariant holds in every flow: The judged PR never configures its own gate/);
+    assert.match(out, /- \[ \] Security requirement: the loop merges with a fine-grained token/);
   });
 });

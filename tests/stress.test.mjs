@@ -170,7 +170,7 @@ distilled: Brief piped through standard input
 
     const resScore = runB2i(['score', '-'], validBrief);
     assert.equal(resScore.code, 0);
-    assert.match(resScore.stdout, /Brainstorm2idea score — \d+\/100/);
+    assert.match(resScore.stdout, /Brainstorm2idea score — Doability \d+\/100/);
   });
 
   test('7. Path traversal and reserved device names protection in handoff', () => {
@@ -216,6 +216,26 @@ distilled: Safe handoff
       assert.equal(scoreResult.ok, true, `Spark ${spark.id} must score cleanly`);
       assert.ok(scoreResult.score >= 90, `Spark ${spark.id} score (${scoreResult.score}) must be >= 90`);
       assert.equal(scoreResult.grade, 'EXCELLENT', `Spark ${spark.id} grade must be EXCELLENT`);
+    }
+  });
+
+  test('8b. Spark seeds keep their scores and raise no false trust warnings', () => {
+    // Every seed scored 100 before the judgment checks; the math must not move.
+    // webhook-logger is the one seed with a real trust boundary (it accepts
+    // arbitrary network payloads), so it carries a TRUST: line; the rest must
+    // not trip a trigger at all.
+    for (const spark of SPARK_CATALOG) {
+      const briefMd = generateBriefFromSpark(spark);
+      const scoreResult = scoreBrief(briefMd);
+      assert.equal(scoreResult.score, 100, `Spark ${spark.id} still scores 100`);
+
+      const { judgment, warnings } = validateBrief(briefMd);
+      const expected = spark.id === 'webhook-logger' ? 'ok' : 'n/a';
+      assert.equal(judgment.trust, expected, `Spark ${spark.id} trust (${judgment.trustTriggers.join(', ')})`);
+      assert.ok(
+        !warnings.some((w) => w.startsWith('trust:') || w.startsWith('out-of-scope safety:')),
+        `Spark ${spark.id} has no trust warning: ${JSON.stringify(warnings)}`
+      );
     }
   });
 

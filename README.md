@@ -22,7 +22,8 @@ npx @ahmed-3m/brainstorm2idea handoff my-idea
 
 ```text
 Brainstorm2idea check — PASS (7/7)
-Brainstorm2idea score — 85/100 (Grade B - GOOD)
+Brainstorm2idea score — Doability 85/100 (Grade B - GOOD)
+  Not checked: prior art (no ## Alternatives).
   ✓ Mitigated OAuth/SSO: explicitly marked in Out of scope
 ```
 
@@ -115,9 +116,13 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 
 ## Notes
 - Keep UI minimal and keyboard-friendly
+
+## Alternatives
+- Paprika: paid recipe manager with cloud sync. Differs by: free, offline-only, no account
+- A notes app: free-form text anywhere. Differs by: structured tags and ingredient search
 ```
 
-`b2i check` enforces seven hard rules — schema, name, template, goal (1–3 bullets), flows (1–3 numbered), out-of-scope (≥1 bullet), distilled (≤200 chars) — and surfaces at most three failure notes, so agent iterations stay cheap.
+`b2i check` enforces seven hard rules — schema, name, template, goal (1–3 bullets), flows (1–3 numbered), out-of-scope (≥1 bullet), distilled (≤200 chars) — and surfaces at most three notes, failures first, so agent iterations stay cheap. `## Alternatives` is optional and never fails a check; when it is missing or thin, `check` adds a warning, because the score measures shape, not whether the tool already exists. Optional `## Invariants` bullets (≤5) list rules every flow must obey and do not count toward the flow cap.
 
 ## Doability scoring (`b2i score`)
 
@@ -126,6 +131,8 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 - **Scope discipline (30 pts)** — rewards explicit non-goals.
 - **Rabbit-hole immunity (40 pts)** — detects high-risk patterns (`auth`, `payments`, `multi-tenant`, `crypto/blockchain`, `custom ML training`, `native apps`, `real-time video/audio`). Marked in `## Out of scope` → safely mitigated; left in `## Core flows` → advisory deduction.
 - **Template fit (30 pts)** — concise goals, demoable flows, explicit `ASSUMPTION:` / `RISK:` tags.
+
+The number is labeled **Doability** because it measures shape, not judgment. When a brief has no or thin `## Alternatives`, or its scope crosses a trust boundary (merge/deploy, credentials, runs code, agent, webhook, CI, payment) with no `TRUST:` line, `score` adds one line saying so, e.g. `Not checked: prior art (no ## Alternatives), trust boundaries (merge/deploy, runs code in scope, no TRUST: lines).` It prints nothing extra when both are satisfied or don't apply. `--json` carries the same verdicts as an additive `judgment` object: `alternatives` (`ok` | `thin` | `missing`), `trust` (`n/a` | `ok` | `missing`), `trustTriggers`, and `scopedOutSafety`.
 
 ## Programmatic API
 

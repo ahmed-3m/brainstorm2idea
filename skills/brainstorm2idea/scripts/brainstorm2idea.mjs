@@ -56,6 +56,26 @@ export const RABBIT_HOLES = [
   { pattern: /\b(real.?time (video|audio)|live stream|video call|video chat)\b/i, label: 'Real-time media', fix: 'mock media with static fixtures or text-only fallback' },
 ];
 
+// Scope that crosses a trust boundary: something acts with a credential on
+// input it did not write. Matched against active scope (name, distilled, Goal,
+// flows); a hit asks for TRUST: lines, never a score deduction. Word-bounded and
+// phrase-shaped so "push notifications" or "token counts" stay quiet.
+export const TRUST_TRIGGERS = [
+  { pattern: /\b(?:auto[- ]?merg(?:e|es|ed|ing)|merg(?:e|es|ed|ing)\s+(?:the\s+|a\s+|its\s+|their\s+)?(?:PRs?|pull\s+requests?|MRs?|merge\s+requests?)|(?:git|force)[- ]push(?:es|ed|ing)?|push(?:es|ed|ing)?\s+(?:it\s+|them\s+)?(?:directly\s+)?to\s+(?:main|master|origin|remote|prod(?:uction)?|the\s+(?:default\s+)?branch)|deploy(?:s|ed|ing|ments?)?|releas(?:e|es|ed|ing)\s+(?:it\s+)?to\s+(?:npm|pypi|prod(?:uction)?|users)|publish(?:es|ed|ing)?\s+(?:it\s+|the\s+package\s+)?to\s+(?:npm|pypi|the\s+registry))\b/i, label: 'merge/deploy' },
+  { pattern: /\b(?:credentials?|api[ _-]?keys?|(?:access|auth|bearer|refresh|personal\s+access|deploy|bot|github|npm)[ _-]?tokens?|client\s+secrets?|private\s+keys?|ssh\s+keys?|secrets?\s+(?:managers?|stores?|vaults?))\b/i, label: 'credentials' },
+  // Env-var names are matched case-sensitively, so "next_token" cursors stay quiet.
+  { pattern: /\b[A-Z][A-Z0-9_]*_(?:TOKEN|API_KEY|SECRET)\b/, label: 'credentials' },
+  { pattern: /\b(?:run|runs|running|ran|execut(?:e|es|ed|ing))\s+(?:the\s+|its\s+|their\s+|repo\s+|project\s+|arbitrary\s+|untrusted\s+|user[- ]supplied\s+|generated\s+|PR\s+)*(?:tests|test\s+(?:suites?|commands?)|code(?![\s-]+(?:formatt\w*|style\w*|review\w*|lint\w*|coverage|search\w*|quality|snippets?|blocks?|highlight\w*)\b)|scripts?|shell(?:\s+commands?)?|arbitrary\s+commands?)\b/i, label: 'runs code' },
+  // Software agents only: "travel agent" or "booking agent" is not a trust boundary.
+  { pattern: /\b(?:agentic|(?:AI|LLM|coding|code|autonomous|software|dev|chat|GPT|Claude|Codex|browser|computer[- ]use|MCP|sub|multi)[\s-]*agents?(?![\s-]+(?:outputs?|responses?|payloads?|transcripts?|logs?|evals?)\b)|agents?\s+(?:loop|runtime|framework|harness|SDK|tools?))\b/i, label: 'agent' },
+  { pattern: /\bwebhooks?\b/i, label: 'webhook' },
+  { pattern: /\b(?:CI(?:\/CD)?|continuous\s+integration|GitHub\s+Actions?|(?:CI|GitHub|Actions)\s+workflows?|\.github\/workflows|workflow\s+(?:runs?|files?|jobs?|dispatch))\b/i, label: 'CI/workflow' },
+  { pattern: /\b(?:payments?|payouts?|billing|stripe|paypal|refunds?|charg(?:e|es|ing)\s+(?:the\s+)?(?:cards?|customers?|users?))\b/i, label: 'payment' },
+];
+
+// An Out-of-scope bullet naming one of these is cutting a safety control, not a feature.
+const SAFETY_CONTROL = /\b(?:sandbox(?:ed|es|ing)?|isolat(?:e|ed|es|ing|ion)|containers?|containeri[sz](?:e|ed|ation)|untrusted\s+(?:code|input)|least[- ]privilege|permissions?|secrets?)\b/i;
+
 // ---------------------------------------------------------------------------
 // 7 Hard Checks Validator
 // ---------------------------------------------------------------------------
@@ -176,8 +196,8 @@ export function validateBrief(content, options = {}) {
       .map((l) => l.trim())
       .filter((l) => /^[-*+]\s+/.test(l));
     for (const l of lines) {
-      if (!/^[-*+]\s+(RISK:|ASSUMPTION:)/i.test(l)) {
-        warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK: or ASSUMPTION:`);
+      if (!/^[-*+]\s+(RISK:|ASSUMPTION:|TRUST:)/i.test(l)) {
+        warnings.push(`risks & assumptions: bullet "${l.slice(0, 40)}..." should prefix with RISK:, ASSUMPTION: or TRUST:`);
         break;
       }
     }
@@ -192,6 +212,12 @@ export function validateBrief(content, options = {}) {
     if (noteBullets.length > 6) {
       warnings.push(`notes: ${noteBullets.length} bullets, recommended max 6`);
     }
+  }
+
+  // Invariants: rules every flow must obey. Optional, and never counted toward the 3-flow cap.
+  const invariantCount = filledItems(getSection(/^Invariants$/i)?.content).length;
+  if (invariantCount > 5) {
+    warnings.push(`invariants: ${invariantCount} bullets, recommended max 5`);
   }
 
   // Two-product smell soft warning (advisory only)
@@ -209,6 +235,9 @@ export function validateBrief(content, options = {}) {
     warnings.push(`two-product smell: "${snippet}…" joins two deliverables — brief one product and park the other in ## Out of scope`);
   }
 
+  // Judgment checks: warnings beside the 7 hard checks, never failures.
+  const judgment = judgeBrief({ getSection, title, distilled: meta.distilled }, warnings);
+
   const passed = 7 - errors.length;
   const ok = errors.length === 0;
 
@@ -225,8 +254,72 @@ export function validateBrief(content, options = {}) {
       distilled: (meta.distilled ?? '').trim(),
     },
     sections,
+    judgment,
   };
 }
+
+// List items that carry content: init/dump scaffold TODO placeholders don't count.
+const filledItems = (text) => extractListItems(text).filter((b) => !/^TODO\b/i.test(b));
+
+const snip = (s, n = 40) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * What the doability score cannot see. `b2i score` measures shape only, so a
+ * well-formed clone of an existing tool scores 100. These checks push their
+ * findings onto `warnings` and return a compact verdict per check.
+ */
+function judgeBrief({ getSection, title, distilled }, warnings) {
+  // Prior art: the nearest existing tools, and how this brief differs from each.
+  let alternatives = 'ok';
+  const altSec = getSection(/^Alternatives$/i);
+  if (!altSec) {
+    alternatives = 'missing';
+    warnings.push('alternatives: no ## Alternatives section; the score checks shape, not whether this already exists');
+  } else {
+    const alts = filledItems(altSec.content);
+    const undiffered = alts.find((b) => !/\bDiffers by:/i.test(b));
+    if (alts.length < 2) {
+      alternatives = 'thin';
+      warnings.push(`alternatives: ${alts.length} bullet${alts.length === 1 ? '' : 's'}, name the 2-3 nearest existing tools as "- <Name>: <what it does>. Differs by: <how this differs>"`);
+    } else if (undiffered) {
+      alternatives = 'thin';
+      warnings.push(`alternatives: "${snip(undiffered)}" has no "Differs by:"; say how this brief differs`);
+    }
+  }
+
+  // Trust boundaries: scope that merges, deploys, holds credentials or runs code
+  // needs TRUST: lines saying who acts on what, and why that is safe.
+  const activeScope = [title, distilled, getSection(/^Goal$/i)?.content, getSection(/^(Core flows|Public API)$/i)?.content]
+    .filter(Boolean)
+    .join('\n');
+  const trustTriggers = [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(activeScope)).map((t) => t.label))];
+  // Same heading match as score and export, so a plain "## Risks" counts too.
+  const trustLines = filledItems(getSection(/^Risks/i)?.content).filter((b) => /^TRUST:/i.test(b));
+  let trust = 'n/a';
+  const scopedOutSafety = [];
+  if (trustTriggers.length > 0) {
+    trust = trustLines.length > 0 ? 'ok' : 'missing';
+    if (trust === 'missing') {
+      warnings.push(`trust: ${trustTriggers.join(', ')} in scope, no TRUST: line; say who acts with which credential, what untrusted input reaches it, what crosses a process boundary, and who configures it`);
+    }
+    // A cut control is answered only by a TRUST: line naming that same control.
+    const answered = new Set(trustLines.flatMap(safetyControlsIn));
+    for (const b of safetyBulletsOf(getSection(/^Out of scope/i)?.content)) {
+      if (safetyControlsIn(b).some((k) => answered.has(k))) continue;
+      scopedOutSafety.push(b);
+      warnings.push(`out-of-scope safety: "${b}" is a safety control, not a feature; keep it or add a TRUST: line saying how v0 is safe without it`);
+    }
+  }
+
+  return { alternatives, trust, trustTriggers, scopedOutSafety };
+}
+
+const safetyBulletsOf = (outOfScope) => extractListItems(outOfScope).filter((b) => SAFETY_CONTROL.test(b));
+
+// The safety controls a line names, folded to one key per family
+// ("Sandboxed" and "sandbox" -> "sandb", "containers" -> "conta").
+const safetyControlsIn = (line) =>
+  [...line.matchAll(new RegExp(SAFETY_CONTROL.source, 'gi'))].map((m) => m[0].toLowerCase().slice(0, 5));
 
 // ---------------------------------------------------------------------------
 // Doability & Rabbit-Hole Scorer (b2i score)
@@ -251,6 +344,7 @@ export function scoreBrief(content) {
       warnings: valid.warnings,
       tips: ['Fix the 7 check errors first before scoring doability.'],
       meta: valid.meta,
+      judgment: valid.judgment,
     };
   }
 
@@ -276,13 +370,20 @@ export function scoreBrief(content) {
   const activeScope = `${meta.name} ${goal} ${flows}`;
   const detectedRabbitHoles = [];
   const mitigatedRabbitHoles = [];
+  // With a trust boundary in scope, a scoped-out safety control is a gap, not a
+  // mitigation: those bullets never credit a rabbit hole as quarantined.
+  const safetyCut = new Set(valid.judgment.trustTriggers.length > 0 ? safetyBulletsOf(outOfScope) : []);
+  const mitigatingScope = outOfScope
+    .split(/\r?\n/)
+    .filter((l) => !safetyCut.has(extractListItems(l)[0]))
+    .join('\n');
 
   // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
   // when "PayPal" is listed in Out of scope (both match the payments pattern).
   for (const rh of RABBIT_HOLES) {
     if (rh.pattern.test(activeScope)) {
       detectedRabbitHoles.push(rh);
-    } else if (rh.pattern.test(outOfScope)) {
+    } else if (rh.pattern.test(mitigatingScope)) {
       mitigatedRabbitHoles.push(rh);
     }
   }
@@ -347,6 +448,12 @@ export function scoreBrief(content) {
   if (twoProductWarn) {
     tips.push(`💡 Two-product smell: ${twoProductWarn.slice('two-product smell: '.length)}`);
   }
+  for (const cut of valid.judgment.scopedOutSafety) {
+    tips.push(`⚠️ Out-of-scope safety: "${snip(cut)}" is a safety control; keep it or add a TRUST: line (score unchanged)`);
+  }
+  if (valid.judgment.trustTriggers.length > 0 && filledItems(getSec(/^Invariants$/i)).length === 0) {
+    tips.push('💡 Trust boundary in scope: add ## Invariants (≤5 rules every flow must obey, e.g. "the change being judged never edits its own gate").');
+  }
 
   return {
     ok: true,
@@ -384,6 +491,8 @@ export function scoreBrief(content) {
     warnings: valid.warnings,
     tips,
     meta: valid.meta,
+    // What the score cannot see (prior art, trust boundaries); never part of the number.
+    judgment: valid.judgment,
   };
 }
 
@@ -562,13 +671,17 @@ export function cmdCheck(args) {
     if (appliedFixes.length > 3) {
       console.log(`  ${c.dim(`(+${appliedFixes.length - 3} more mechanical fixes applied)`)}`);
     }
-    if (!result.ok) {
-      for (const err of result.errors.slice(0, 3)) {
-        console.log(`  ${c.red(err)}`);
-      }
+    // At most 3 notes per run, failures first; warnings fill the slots left.
+    const notes = [
+      ...(result.ok ? [] : result.errors.map((err) => c.red(err))),
+      ...result.warnings.map((w) => `${c.yellow('note:')} ${w}`),
+    ];
+    for (const note of notes.slice(0, 3)) {
+      console.log(`  ${note}`);
     }
-    for (const w of result.warnings) {
-      console.log(`  ${c.yellow('note:')} ${w}`);
+    if (notes.length > 3) {
+      const more = notes.length - 3;
+      console.log(`  ${c.dim(`(+${more} more note${more === 1 ? '' : 's'}; b2i check --json lists all)`)}`);
     }
   }
 
@@ -613,13 +726,24 @@ export function cmdScore(args) {
       return 1;
     }
     const colorFn = result.score >= 80 ? c.green : (result.score >= 70 ? c.yellow : c.red);
-    console.log(`Brainstorm2idea score — ${colorFn(`${result.score}/100`)} (${colorFn(`Grade ${result.letterGrade}`)} - ${colorFn(result.grade)})`);
+    console.log(`Brainstorm2idea score — Doability ${colorFn(`${result.score}/100`)} (${colorFn(`Grade ${result.letterGrade}`)} - ${colorFn(result.grade)})`);
+    const notChecked = describeNotChecked(result.judgment);
+    if (notChecked) console.log(`  ${c.yellow(notChecked)}`);
     console.log(`  breakdown: scope=${result.breakdown.scope}/30, infra=${result.breakdown.rabbitHoles}/40, alignment=${result.breakdown.alignment}/30`);
     for (const tip of result.tips) {
       console.log(`  ${tip}`);
     }
   }
   return 0;
+}
+
+// One line naming what a doability number does not cover; '' when nothing is open.
+function describeNotChecked(judgment) {
+  const open = [];
+  if (judgment.alternatives === 'missing') open.push('prior art (no ## Alternatives)');
+  else if (judgment.alternatives === 'thin') open.push('prior art (## Alternatives is thin)');
+  if (judgment.trust === 'missing') open.push(`trust boundaries (${judgment.trustTriggers.join(', ')} in scope, no TRUST: lines)`);
+  return open.length ? `Not checked: ${open.join(', ')}.` : '';
 }
 
 export function cmdList(args) {
@@ -800,6 +924,11 @@ export function toI2pArg(value) {
   return String(value).replace(/"/g, "'").replace(/\\/g, '/').replace(/[\u0000-\u001f]+/g, ' ').trim();
 }
 
+// Optional sections carried through handoff after Notes, in this order.
+const JUDGMENT_SECTIONS = ['Alternatives', 'Invariants'];
+// An unfilled init/dump scaffold (only TODO items) is not carried downstream.
+const isScaffoldOnly = (body) => extractListItems(body).length > 0 && filledItems(body).length === 0;
+
 export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   let text = prototypeContent;
   const sections = briefResult.sections;
@@ -836,6 +965,14 @@ export function mergeSectionsIntoPrototype(prototypeContent, briefResult) {
   const notesKey = Object.keys(sections).find((k) => /^Notes$/i.test(k));
   if (notesKey && !/##\s+Notes/i.test(text)) {
     text = text.trimEnd() + `\n\n## Notes\n${sections[notesKey]}\n`;
+  }
+
+  // Append the judgment sections if present (prior art, then rules every flow must obey)
+  for (const heading of JUDGMENT_SECTIONS) {
+    const key = Object.keys(sections).find((k) => new RegExp(`^${heading}$`, 'i').test(k));
+    if (key && sections[key] && !isScaffoldOnly(sections[key]) && !new RegExp(`##\\s+${heading}`, 'i').test(text)) {
+      text = text.trimEnd() + `\n\n## ${heading}\n${sections[key]}\n`;
+    }
   }
 
   return text.trimEnd() + '\n';
@@ -1097,6 +1234,11 @@ export function cmdHandoff(args) {
       content += `\n## Notes\n${briefResult.sections[notesKey]}\n`;
     }
 
+    for (const heading of JUDGMENT_SECTIONS) {
+      const body = section(new RegExp(`^${heading}$`, 'i'));
+      if (body && !isScaffoldOnly(body)) content += `\n## ${heading}\n${body}\n`;
+    }
+
     if (isDryRun) {
       if (isJson) {
         console.log(JSON.stringify({
@@ -1332,6 +1474,11 @@ export function exportBrief(content, options = {}) {
   const outOfScope = extractListItems(getSectionContent(/^Out of scope/i));
   const risks = extractListItems(getSectionContent(/^Risks/i));
   const notes = extractListItems(getSectionContent(/^Notes/i));
+  const alternatives = filledItems(getSectionContent(/^Alternatives$/i));
+  const invariants = filledItems(getSectionContent(/^Invariants$/i));
+  // TRUST: lines stay in `risks` (unchanged) and are also lifted out as security requirements.
+  const isTrust = (r) => /^TRUST:/i.test(r);
+  const trust = risks.filter(isTrust).map((r) => r.replace(/^TRUST:\s*/i, ''));
 
   const scoreRes = scoreBrief(content);
 
@@ -1347,12 +1494,16 @@ export function exportBrief(content, options = {}) {
       outOfScope,
       risks,
       notes,
+      alternatives,
+      invariants,
+      trust,
       score: {
         total: scoreRes.score,
         grade: scoreRes.grade,
         letterGrade: scoreRes.letterGrade,
         breakdown: scoreRes.breakdown,
       },
+      judgment: scoreRes.judgment,
     }, null, 2);
   }
 
@@ -1368,9 +1519,18 @@ export function exportBrief(content, options = {}) {
     out += flows.map((f, i) => `${i + 1}. ${f}`).join('\n') + '\n\n';
     out += `## Strict Non-Goals (Out of Scope — DO NOT IMPLEMENT)\n`;
     out += outOfScope.map((o) => `- ❌ ${o}`).join('\n') + '\n';
-    if (risks.length > 0) {
+    if (invariants.length > 0) {
+      out += `\n## Hard Constraints (Invariants — every flow must obey)\n`;
+      out += invariants.map((v) => `- ${v}`).join('\n') + '\n';
+    }
+    if (trust.length > 0) {
+      out += `\n## Security Requirements (Trust Boundaries)\n`;
+      out += trust.map((t) => `- 🔒 ${t}`).join('\n') + '\n';
+    }
+    const plainRisks = risks.filter((r) => !isTrust(r));
+    if (plainRisks.length > 0) {
       out += `\n## Key Assumptions & Risks\n`;
-      out += risks.map((r) => `- ⚠️ ${r}`).join('\n') + '\n';
+      out += plainRisks.map((r) => `- ⚠️ ${r}`).join('\n') + '\n';
     }
     if (notes.length > 0) {
       out += `\n## Development Notes\n`;
@@ -1397,6 +1557,8 @@ export function exportBrief(content, options = {}) {
     out += flows.map((f) => `- [ ] ${f}`).join('\n') + '\n\n';
     out += `### Phase 3: Scope Guard & Hardening\n`;
     out += outOfScope.map((o) => `- [ ] Confirm excluded: ${o}`).join('\n') + '\n';
+    for (const v of invariants) out += `- [ ] Invariant holds in every flow: ${v}\n`;
+    for (const t of trust) out += `- [ ] Security requirement: ${t}\n`;
     out += `- [ ] End-to-end verification of all core flows\n`;
     out += `- [ ] Document quickstart in README\n\n`;
     out += `## Acceptance Criteria\n`;
@@ -1435,11 +1597,28 @@ export function exportBrief(content, options = {}) {
       out += `### 7. Implementation Notes\n`;
       out += notes.map((n) => `- ℹ️ ${n}`).join('\n') + '\n\n';
     }
+    if (alternatives.length > 0) {
+      out += `### 8. Alternatives (Prior Art)\n`;
+      out += alternatives.map((a) => {
+        const at = a.indexOf(': ');
+        return at > 0 ? `- **${a.slice(0, at)}**: ${a.slice(at + 2)}` : `- ${a}`;
+      }).join('\n') + '\n\n';
+    }
     out += `---\n*Generated by [brainstorm2idea](https://github.com/Ahmed-3M/brainstorm2idea) v${VERSION}*\n`;
     return out;
   }
 
   throw new Error(`unhandled format "${format}"`);
+}
+
+// TODO scaffolds for init/dump: prior art always; invariants only for templates
+// that serve requests or act unattended, where a cross-flow rule usually exists.
+function judgmentScaffold(template) {
+  let md = '## Alternatives\n- TODO: <Name>: <what it does>. Differs by: <how this brief differs> (name the 2-3 nearest existing tools)\n';
+  if (template === 'api' || template === 'worker') {
+    md += '\n## Invariants\n- TODO: A rule every flow must obey (≤5), or delete this section\n';
+  }
+  return md;
 }
 
 export function cmdDump(args) {
@@ -1540,7 +1719,8 @@ ${flowsHeader}
 ## Notes
 - Source: ${inputPath || 'stdin'}
 - De-noised by b2i dump; fill in all TODO sections before running b2i check.
-`;
+
+${judgmentScaffold(chosenTemplate)}`;
 
   const output = draft.trimEnd() + '\n';
 
@@ -1631,7 +1811,8 @@ ${flowsHeader}
 
 ## Notes
 - Created by \`b2i init\`; fill in all TODO sections before running \`b2i check\`.
-`;
+
+${judgmentScaffold(chosenTemplate)}`;
 
   // Self-verify: never write a brief that would fail the tool's own check.
   const selfCheck = validateBrief(briefMd);

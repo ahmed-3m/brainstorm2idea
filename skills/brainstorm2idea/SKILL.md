@@ -20,7 +20,7 @@ b2i <command>
 `<skill-base>` is this skill's directory. Below and in the `/b2i*` commands, `b2i <command>` is shorthand: if `b2i` is not on PATH, run the `node "<skill-base>/…"` form instead. Commands:
 
 - `check [brief|-] [--fix] [--json]` — run 7 hard lint checks on `brief.md` or stdin (compact verdict, max 3 failure notes); `--fix` rewrites mechanical issues in place (frontmatter value quoting, missing schema key, trailing whitespace — file paths only, never invents content)
-- `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F; exit 0 for any scoreable brief, exit 1 when the brief fails the 7 checks); `--json` includes structured per-category sub-scores (`categories.scope`, `categories.rabbitHoles`, `categories.alignment`) with the evidence behind each
+- `score [brief|-] [--json]` — compute 0–100 Doability & Rabbit-Hole score (grade A–F; exit 0 for any scoreable brief, exit 1 when the brief fails the 7 checks); `--json` includes structured per-category sub-scores (`categories.scope`, `categories.rabbitHoles`, `categories.alignment`) with the evidence behind each, plus an additive `judgment` object (`alternatives`, `trust`, `trustTriggers`, `scopedOutSafety`). Human output labels the number `Doability` and adds one `Not checked:` line when prior art or trust boundaries are open; relay that line to the user rather than presenting the score as a verdict on the idea
 - `spark [category] [--seed <id>] [--output <path>] [--force] [--json]` — browse 40 curated prototype archetypes or seed a complete `brief.md` (devtools, productivity, local-ai, automation, cli, web)
 - `init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a starter `brief.md` with TODO sections (for humans working outside an agent; refuses to overwrite an existing brief)
 - `dump [file|-] [--output <path>] [--force] [--json]` — de-noise a raw voice transcript or rambling dump into a draft brief skeleton
@@ -51,9 +51,11 @@ The journey is free — adapt to the idea:
 
 ### Explicit Doability Duty
 Before drafting, resolve:
-1. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
-2. The smallest demoable slice (`## Core flows`, 1–3 items).
-3. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
+1. **Who already does this?** Name the 2–3 nearest existing tools (use web search when your host has it; this costs no question) and record them in `## Alternatives` as `- <Name>: <what it does>. Differs by: <how this brief differs>`. If nothing differs, say so and offer a reframe. Don't proceed silently: `b2i score` measures shape, so a well-formed clone still scores 100.
+2. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
+3. The smallest demoable slice (`## Core flows`, 1–3 items).
+4. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
+5. **Trust boundaries**, when scope merges, pushes, deploys or releases; holds a token, credential, secret or API key; runs tests, code or scripts; or involves an agent, webhook, CI workflow or payment. Answer four questions: (1) who acts, and with which credential; (2) what untrusted input reaches that actor; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing being judged change that config. Spend at most 1 multiple-choice question on them (inside the 3–5 budget, hard cap 8); record the answers as `TRUST:` lines, or `ASSUMPTION:` lines when unconfirmed. Never park a safety control (sandbox, isolation, least privilege, secrets handling) in `## Out of scope` as if it were a feature: keep it, or write a `TRUST:` line saying how v0 is safe without it.
 
 Flows that cannot be demoed belong in `## Out of scope`. If the idea is not software-prototype doable, say so honestly and offer to reshape or output `template: none` (brief-only mode).
 Non-software idea (physical, offline, event): write `template: none`, finish with check + score + export — handoff will politely decline; do not force a software template.
@@ -82,10 +84,10 @@ When the user has no idea, asks what to build, or seeks inspiration ("I don't kn
 
 ### Export Protocol (`/b2i-export`)
 When the user wants to hand off the brief to an external AI agent, project board, or product documentation:
-1. **Agent Kickoff Prompt (`--format prompt`):** Generates a ready-to-paste instruction prompt for Claude Code, Cursor, Copilot, ChatGPT, or Antigravity with strict scope guards.
+1. **Agent Kickoff Prompt (`--format prompt`):** Generates a ready-to-paste instruction prompt for Claude Code, Cursor, Copilot, ChatGPT, or Antigravity with strict scope guards; `## Invariants` become hard constraints and `TRUST:` lines become security requirements.
 2. **GitHub Task Checklist (`--format issues`):** Generates Phase 1 (Scaffolding), Phase 2 (Core Flows), and Phase 3 (Scope Guard & Acceptance Criteria) Markdown checkboxes.
-3. **One-Page PRD (`--format prd`):** Generates a formatted PRD with problem statement, non-goals, and template architecture constraints.
-4. **Machine-Readable JSON (`--format json`):** Emits structured JSON with parsed sections and 0–100 doability scoring.
+3. **One-Page PRD (`--format prd`):** Generates a formatted PRD with problem statement, non-goals, template architecture constraints, and alternatives (prior art).
+4. **Machine-Readable JSON (`--format json`):** Emits structured JSON with parsed sections (including `alternatives`, `invariants`, `trust`), 0–100 doability scoring, and the `judgment` verdicts.
 
 ### Fixed Tail & Skill Chaining
 1. Present the draft brief in chat for human approval.
@@ -121,10 +123,19 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 ## Risks & assumptions
 - RISK: ...
 - ASSUMPTION: inferred by the agent, not confirmed by human — strike or keep
+- TRUST: who acts with which credential on what input, and why that is safe (when scope crosses a trust boundary)
 
 ## Notes
 - Free-form: constraints, preferences, data sources (optional, ≤6 bullets)
+
+## Alternatives
+- Nearest existing tool: what it does. Differs by: how this brief differs (optional, 2–3 bullets)
+
+## Invariants
+- A rule every flow must obey, e.g. the change being judged never edits its own gate (optional, ≤5 bullets)
 ```
+
+The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score. `## Invariants` is optional and does not count toward the 3-flow cap; `check` warns above 5 bullets, and `score` tips you to add it when a trust trigger fires and the section is absent.
 
 ## Token Discipline
 - Edits are diff-sized; never re-print the full brief on minor tweaks.

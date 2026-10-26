@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+- Optional `## Alternatives` section (prior art): `- <Name>: <what it does>. Differs by: <how this brief differs>`. `check` warns when it is missing, has fewer than 2 bullets (TODO placeholders don't count), or a bullet lacks `Differs by:`. Still 7 hard checks; `validateBrief` returns an additive `judgment.alternatives` (`ok` | `thin` | `missing`). The SKILL.md Doability Duty now starts by naming the 2–3 nearest existing tools.
+- Trust-boundary check: exported `TRUST_TRIGGERS` (shaped like `RABBIT_HOLES`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment) match the active scope (name, distilled, Goal, flows). A hit with no `TRUST:` line in `## Risks & assumptions` warns with the four questions (who acts and with which credential; what untrusted input reaches it; what crosses a job/process boundary; who configures the tool). An `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) warns unless a `TRUST:` line names that same control, and no longer counts as a mitigated rabbit hole in `score` tips/categories (the score itself is unchanged). `judgment` gains `trust` (`n/a` | `ok` | `missing`), `trustTriggers` and `scopedOutSafety`. `TRUST:` is accepted beside `RISK:`/`ASSUMPTION:`; the `webhook-logger` spark seed now carries one. The SKILL.md Doability Duty gains the four trust questions (at most 1 multiple-choice question; the rest become `TRUST:`/`ASSUMPTION:` lines).
+- Optional `## Invariants` section: rules every flow must obey, never counted toward the 3-flow cap. `check` warns above 5 bullets; `score` adds a tip (not a warning) when a trust trigger fires and the section is missing.
+- `score --json` and `scoreBrief()` return an additive `judgment` object (`alternatives`, `trust`, `trustTriggers`, `scopedOutSafety`), also on invalid briefs. Every existing key is kept.
+- The new sections carry through: handoff (`i2p` merge and `--target raw`) appends `## Alternatives` and `## Invariants` after Notes; `export --format prompt` emits Invariants as "Hard Constraints" and `TRUST:` lines as "Security Requirements (Trust Boundaries)" (moved out of Key Assumptions & Risks); `prd` adds "8. Alternatives (Prior Art)"; `json` adds `alternatives`, `invariants`, `trust` (prefix stripped) and `judgment`, with `risks` unchanged. `issues` adds invariants and security requirements to the Phase 3 checklist. `init` and `dump` scaffold an empty `## Alternatives` TODO, plus a `## Invariants` TODO for the `api` and `worker` templates; unfilled TODO-only sections are never exported or handed off, and don't satisfy the judgment checks.
+
+### Changed
+- `score` labels its number `Doability` (`Brainstorm2idea score — Doability 100/100 (Grade A - EXCELLENT)`) and adds one `Not checked: prior art (…), trust boundaries (…).` line when either is open; nothing extra when both are satisfied or n/a. Scoped-out safety controls show as a ⚠️ tip. The score itself is unchanged.
+- `check` prints at most 3 notes in total, failures first, then warnings, plus a `(+N more notes; b2i check --json lists all)` line. Warnings used to print uncapped after the failures.
+
 ## [v0.5.1] — 2026-10-23
 
 ### Fixed

@@ -170,7 +170,7 @@ distilled: Brief piped through standard input
 
     const resScore = runB2i(['score', '-'], validBrief);
     assert.equal(resScore.code, 0);
-    assert.match(resScore.stdout, /Brainstorm2idea score — \d+\/100/);
+    assert.match(resScore.stdout, /Brainstorm2idea score — Doability \d+\/100/);
   });
 
   test('7. Path traversal and reserved device names protection in handoff', () => {

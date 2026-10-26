@@ -339,6 +339,7 @@ export function scoreBrief(content) {
       warnings: valid.warnings,
       tips: ['Fix the 7 check errors first before scoring doability.'],
       meta: valid.meta,
+      judgment: valid.judgment,
     };
   }
 
@@ -442,6 +443,9 @@ export function scoreBrief(content) {
   if (twoProductWarn) {
     tips.push(`💡 Two-product smell: ${twoProductWarn.slice('two-product smell: '.length)}`);
   }
+  for (const cut of valid.judgment.scopedOutSafety) {
+    tips.push(`⚠️ Out-of-scope safety: "${snip(cut)}" is a safety control; keep it or add a TRUST: line (score unchanged)`);
+  }
   if (valid.judgment.trustTriggers.length > 0 && !Object.keys(sections).some((k) => /^Invariants$/i.test(k))) {
     tips.push('💡 Trust boundary in scope: add ## Invariants (≤5 rules every flow must obey, e.g. "the change being judged never edits its own gate").');
   }
@@ -482,6 +486,8 @@ export function scoreBrief(content) {
     warnings: valid.warnings,
     tips,
     meta: valid.meta,
+    // What the score cannot see (prior art, trust boundaries); never part of the number.
+    judgment: valid.judgment,
   };
 }
 
@@ -715,13 +721,24 @@ export function cmdScore(args) {
       return 1;
     }
     const colorFn = result.score >= 80 ? c.green : (result.score >= 70 ? c.yellow : c.red);
-    console.log(`Brainstorm2idea score — ${colorFn(`${result.score}/100`)} (${colorFn(`Grade ${result.letterGrade}`)} - ${colorFn(result.grade)})`);
+    console.log(`Brainstorm2idea score — Doability ${colorFn(`${result.score}/100`)} (${colorFn(`Grade ${result.letterGrade}`)} - ${colorFn(result.grade)})`);
+    const notChecked = describeNotChecked(result.judgment);
+    if (notChecked) console.log(`  ${c.yellow(notChecked)}`);
     console.log(`  breakdown: scope=${result.breakdown.scope}/30, infra=${result.breakdown.rabbitHoles}/40, alignment=${result.breakdown.alignment}/30`);
     for (const tip of result.tips) {
       console.log(`  ${tip}`);
     }
   }
   return 0;
+}
+
+// One line naming what a doability number does not cover; '' when nothing is open.
+function describeNotChecked(judgment) {
+  const open = [];
+  if (judgment.alternatives === 'missing') open.push('prior art (no ## Alternatives)');
+  else if (judgment.alternatives === 'thin') open.push('prior art (## Alternatives is thin)');
+  if (judgment.trust === 'missing') open.push(`trust boundaries (${judgment.trustTriggers.join(', ')} in scope, no TRUST: lines)`);
+  return open.length ? `Not checked: ${open.join(', ')}.` : '';
 }
 
 export function cmdList(args) {

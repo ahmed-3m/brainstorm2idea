@@ -776,7 +776,7 @@ distilled: Store with payment processing
   test('b2i score CLI outputs human verdict with grade', () => {
     const res = runB2i(['score', join(FIXTURES_DIR, 'valid-brief.md')]);
     assert.equal(res.code, 0);
-    assert.match(res.stdout, /Brainstorm2idea score — \d+\/100 \(Grade/);
+    assert.match(res.stdout, /Brainstorm2idea score — Doability \d+\/100 \(Grade/);
   });
 
   test('b2i score --json CLI outputs machine-readable breakdown', () => {
@@ -1551,5 +1551,57 @@ describe('11. Judgment: ## Invariants', () => {
   test('no trust trigger, no invariants tip', () => {
     const sc = scoreBrief(readFileSync(join(FIXTURES_DIR, 'valid-brief.md'), 'utf8'));
     assert.ok(!sc.tips.some((t) => t.includes('## Invariants')), JSON.stringify(sc.tips));
+  });
+});
+
+describe('12. Judgment: honest score output', () => {
+  test('DevLoop: doability stays 100 and judgment sits beside it in --json', () => {
+    const sc = scoreBrief(DEVLOOP);
+    assert.equal(sc.ok, true);
+    assert.equal(sc.score, 100);
+    assert.equal(sc.letterGrade, 'A');
+    assert.equal(sc.grade, 'EXCELLENT');
+    assert.deepEqual(sc.breakdown, { scope: 30, rabbitHoles: 40, alignment: 30 });
+    assert.equal(sc.judgment.alternatives, 'missing');
+    assert.equal(sc.judgment.trust, 'missing');
+    assert.deepEqual(sc.judgment.scopedOutSafety, ['Sandboxed execution of untrusted code in containers or VMs']);
+
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-brief.md'), '--json']);
+    assert.equal(res.code, 0);
+    const json = JSON.parse(res.stdout);
+    for (const key of ['ok', 'score', 'grade', 'letterGrade', 'breakdown', 'categories', 'warnings', 'tips', 'meta']) {
+      assert.ok(key in json, `existing key "${key}" is kept`);
+    }
+    assert.equal(json.judgment.alternatives, 'missing');
+    assert.equal(json.judgment.trust, 'missing');
+  });
+
+  test('human output labels the number Doability and names what was not checked', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-brief.md')]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Brainstorm2idea score — Doability 100\/100 \(Grade A - EXCELLENT\)/);
+    assert.ok(
+      res.stdout.includes('Not checked: prior art (no ## Alternatives), trust boundaries (merge/deploy, runs code in scope, no TRUST: lines).'),
+      res.stdout
+    );
+  });
+
+  test('nothing extra when both checks are satisfied', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'devloop-fixed.md')]);
+    assert.equal(res.code, 0);
+    assert.match(res.stdout, /Doability 100\/100/);
+    assert.doesNotMatch(res.stdout, /Not checked/);
+    const sc = scoreBrief(DEVLOOP_FIXED);
+    assert.deepEqual(
+      { alternatives: sc.judgment.alternatives, trust: sc.judgment.trust, scopedOutSafety: sc.judgment.scopedOutSafety },
+      { alternatives: 'ok', trust: 'ok', scopedOutSafety: [] }
+    );
+  });
+
+  test('a brief with no trust trigger only reports prior art', () => {
+    const res = runB2i(['score', join(FIXTURES_DIR, 'valid-brief.md')]);
+    assert.equal(res.code, 0);
+    assert.ok(res.stdout.includes('Not checked: prior art (no ## Alternatives).'), res.stdout);
+    assert.doesNotMatch(res.stdout, /trust boundaries/);
   });
 });

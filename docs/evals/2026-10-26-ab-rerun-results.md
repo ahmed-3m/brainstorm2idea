@@ -76,7 +76,7 @@ Unrequested extras (X, descriptive only): 80 in arm A and 87 in arm B.
 - **Scope creep is still where b2i helps.** Four ideas differ by ≥ 2 traps (3, 5, 6, 7), all in b2i's favour.
   - The spec counts ±1 on one idea as noise.
   - ΣT(A) stays almost flat between runs (8 → 9). ΣT(B) rises (19 → 22).
-- **Goal match:** 3A's lost must-have from the first run did not recur. The one real goal miss in this run is in arm B. 5B built a full café platform (catalogue, members, credits) and never said the idea is physical, so it scored G = 0.
+- **Goal match:** 3A's lost must-have from the first run did not recur. The one complete goal miss (G = 0) in this run is in arm B. 5B built a full café platform (catalogue, members, credits) and never said the idea is physical. 8A and 8B are partial (G = 0.50): both failed M1, as in the first run.
 - **Cost and time:** arm A was cheaper ($4.89 vs $6.64) and faster (80.8 vs 129.1 min).
   - The outlier is again 3B: Express, OAuth, a three-region server with git history, 34.7 min, $1.79.
   - On ideas 1, 2 and 7, arm A used more tokens than arm B. That's the overhead of running the skill when there's little to cut, plus 2A's rework round.
@@ -181,12 +181,17 @@ spec's "mocked or real" rule, matching the first run's calls:
 4. **The H5 brief check was done after the run.**
    - **The problem:** the spec puts the "brief passes `check`" part of H5 on the harness. But `handoff` moves the source brief into `PROTOTYPE.md`, and that file has no frontmatter. So the harness's brief finder found a brief only for 8A, where the agent had recreated `brief.md`.
    - **What was done instead:** each arm-A cell's last brief was rebuilt from the agent's own `write`/`edit` tool events, including 3A's `cp` from a temp draft. Each was then checked and scored with `skill-src` at `86f58e0`.
-   - **Validation:** the rebuilt 8A brief is byte-identical to the file on disk. For the other 7, every Goal and Core-flow line appears verbatim in the merged `PROTOTYPE.md`.
+   - **Validation against what handoff left behind:**
+     - The rebuilt 8A brief is byte-identical to the file on disk.
+     - For the other 7, every body line of the rebuilt brief appears verbatim in the merged `PROTOTYPE.md`, 232 of 233 lines in all.
+     - Each `distilled` value matches the `> Idea:` line, and each `template` matches `.idea2prototype.json`.
+     - The only differences are ones handoff makes by design: 1A's `"` became `'` (#24), and 4A's library template renames `## Core flows` to `## Public API`.
+   - **A second, independent route:** the agent's own last `check` before each successful handoff passed 7/7. It ran the bundled engine, whose sha256 matches `skill-src` at `86f58e0`. So H5's brief check holds either way.
    - **Location:** the rebuilt briefs and results are in the harness's `posthoc/` folder.
 5. **The b2i provenance classifier** counted PATH probes as global `b2i` use in 1A, 3A, 6A and 7A, and set `judgmentValid: false` for them. Each was reclassified by reading the commands (see Secondary observations).
 
 **Unchanged from setup:**
-- idea2prototype stayed at 1.2.0 across all three manifests.
+- idea2prototype stayed at 1.2.0 across all three manifests. Each of the 7 i2p handoffs also recorded 1.2.0 in its `.idea2prototype.json`; 3A's raw handoff did not run i2p.
 - No redos, quota waits, `relay_failed` cells or unparsed grades.
 
 The limitations stated in advance still apply:

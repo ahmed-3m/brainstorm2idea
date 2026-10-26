@@ -1605,3 +1605,85 @@ describe('12. Judgment: honest score output', () => {
     assert.doesNotMatch(res.stdout, /trust boundaries/);
   });
 });
+
+describe('13. Judgment: new sections survive handoff and export', () => {
+  const FULL = withInvariants(DEVLOOP_FIXED);
+
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('mergeSectionsIntoPrototype appends Alternatives and Invariants', () => {
+    const merged = mergeSectionsIntoPrototype('# Prototype spec — DevLoop\n\n## Goal\n-\n\n## Core flows\n1.\n\n## Out of scope\n-\n', validateBrief(FULL));
+    assert.match(merged, /## Alternatives\n- GitHub Copilot coding agent: [^\n]*Differs by:/);
+    assert.match(merged, /## Invariants\n- The judged PR never configures its own gate/);
+  });
+
+  test('handoff --target raw carries Alternatives and Invariants into PROTOTYPE.md', () => {
+    const brief = join(TMP_DIR, 'devloop.md');
+    writeFileSync(brief, FULL, 'utf8');
+    const res = runB2i(['handoff', join(TMP_DIR, 'devloop'), '--target', 'raw', '--brief', brief]);
+    assert.equal(res.code, 0, res.all);
+    const proto = readFileSync(join(TMP_DIR, 'devloop', 'PROTOTYPE.md'), 'utf8');
+    assert.match(proto, /## Alternatives\n- GitHub Copilot coding agent/);
+    assert.match(proto, /## Invariants\n- The judged PR never configures its own gate/);
+    assert.match(proto, /- TRUST: the loop merges with a fine-grained token/);
+  });
+
+  test('export prompt: invariants are hard constraints and TRUST lines are security requirements', () => {
+    const res = runB2i(['export', '-', '--format', 'prompt'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    assert.match(res.stdout, /## Hard Constraints \(Invariants — every flow must obey\)\n- The judged PR never configures its own gate/);
+    assert.match(res.stdout, /## Security Requirements \(Trust Boundaries\)\n- 🔒 the loop merges with a fine-grained token/);
+    const risks = res.stdout.split('## Key Assumptions & Risks')[1].split('\n## ')[0];
+    assert.doesNotMatch(risks, /TRUST:/, 'TRUST lines move to the security section');
+  });
+
+  test('export prd adds Alternatives', () => {
+    const res = runB2i(['export', '-', '--format', 'prd'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    assert.match(res.stdout, /### \d+\. Alternatives \(Prior Art\)\n- \*\*GitHub Copilot coding agent\*\*: /);
+  });
+
+  test('export json includes alternatives, invariants and trust', () => {
+    const res = runB2i(['export', '-', '--format', 'json'], {}, FULL);
+    assert.equal(res.code, 0, res.all);
+    const json = JSON.parse(res.stdout);
+    assert.equal(json.alternatives.length, 2);
+    assert.match(json.alternatives[0], /^GitHub Copilot coding agent: .*Differs by:/);
+    assert.deepEqual(json.invariants, ['The judged PR never configures its own gate', 'Only the exact head SHA that passed tests is merged']);
+    assert.equal(json.trust.length, 2);
+    assert.match(json.trust[0], /^the loop merges with a fine-grained token/);
+    assert.equal(json.risks.length, 7, 'existing risks key is unchanged');
+  });
+
+  test('init and dump scaffold an empty ## Alternatives with a TODO', () => {
+    for (const template of VALID_TEMPLATES) {
+      const out = join(TMP_DIR, `init-${template}.md`);
+      const res = runB2i(['init', 'demo', '--template', template, '--output', out]);
+      assert.equal(res.code, 0, res.all);
+      const md = readFileSync(out, 'utf8');
+      assert.match(md, /## Alternatives\n- TODO: /, `init --template ${template}`);
+      assert.equal(validateBrief(md).ok, true);
+      assert.equal(validateBrief(md).judgment.alternatives, 'thin');
+    }
+    const dump = runB2i(['dump', '-'], {}, 'A tool that renames photos by the date they were taken.');
+    assert.equal(dump.code, 0, dump.all);
+    assert.match(dump.stdout, /## Alternatives\n- TODO: /);
+  });
+
+  test('init adds a TODO ## Invariants only for templates that act unattended or serve requests', () => {
+    for (const template of VALID_TEMPLATES) {
+      const out = join(TMP_DIR, `inv-${template}.md`);
+      runB2i(['init', 'demo', '--template', template, '--output', out]);
+      const md = readFileSync(out, 'utf8');
+      const expected = template === 'api' || template === 'worker';
+      assert.equal(/## Invariants\n- TODO: /.test(md), expected, `init --template ${template}`);
+    }
+  });
+});

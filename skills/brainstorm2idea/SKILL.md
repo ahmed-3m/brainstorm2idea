@@ -84,10 +84,10 @@ When the user has no idea, asks what to build, or seeks inspiration ("I don't kn
 
 ### Export Protocol (`/b2i-export`)
 When the user wants to hand off the brief to an external AI agent, project board, or product documentation:
-1. **Agent Kickoff Prompt (`--format prompt`):** Generates a ready-to-paste instruction prompt for Claude Code, Cursor, Copilot, ChatGPT, or Antigravity with strict scope guards.
+1. **Agent Kickoff Prompt (`--format prompt`):** Generates a ready-to-paste instruction prompt for Claude Code, Cursor, Copilot, ChatGPT, or Antigravity with strict scope guards; `## Invariants` become hard constraints and `TRUST:` lines become security requirements.
 2. **GitHub Task Checklist (`--format issues`):** Generates Phase 1 (Scaffolding), Phase 2 (Core Flows), and Phase 3 (Scope Guard & Acceptance Criteria) Markdown checkboxes.
-3. **One-Page PRD (`--format prd`):** Generates a formatted PRD with problem statement, non-goals, and template architecture constraints.
-4. **Machine-Readable JSON (`--format json`):** Emits structured JSON with parsed sections and 0–100 doability scoring.
+3. **One-Page PRD (`--format prd`):** Generates a formatted PRD with problem statement, non-goals, template architecture constraints, and alternatives (prior art).
+4. **Machine-Readable JSON (`--format json`):** Emits structured JSON with parsed sections (including `alternatives`, `invariants`, `trust`), 0–100 doability scoring, and the `judgment` verdicts.
 
 ### Fixed Tail & Skill Chaining
 1. Present the draft brief in chat for human approval.

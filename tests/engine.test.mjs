@@ -29,9 +29,10 @@ const TMP_DIR = resolve('tests/tmp-test-sandbox');
 // environment would otherwise leak into every spawned b2i.
 delete process.env.FORCE_COLOR;
 
-function runB2i(args, env = {}, input = null) {
+function runB2i(args, env = {}, input = null, cwd = undefined) {
   const opts = {
     encoding: 'utf8',
+    cwd,
     env: { ...process.env, ...env },
   };
   if (input !== null) opts.input = input;
@@ -1887,6 +1888,34 @@ ${extra}`;
     }
     assert.ok(!fired({ risks: '- RISK: adoption is a social problem, not software' }).warnings.some((w) => w.startsWith('physical idea')));
     assert.ok(!fired({ goal: '- Let customers pre-order online to complement the physical store' }).warnings.some((w) => w.startsWith('physical idea')));
+  });
+
+  test('PR review: clause-bounded negation, zero trust, physical events, short substitute names', () => {
+    const fired = (b) => scoreBrief(brief({ goal: '- Do one thing', flows: '1. Do it', oos: '- Other\n- More', ...b }));
+    const noAuth = fired({ goal: '- No auth. Stripe checkout for members' });
+    assert.deepEqual(noAuth.categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+    assert.deepEqual(noAuth.judgment.trustTriggers, ['payment']);
+    assert.deepEqual(fired({ goal: '- Implement zero trust API keys' }).judgment.trustTriggers, ['credentials']);
+    assert.ok(!fired({ goal: '- Sell online tickets for a physical event' }).warnings.some((w) => w.startsWith('physical idea')));
+    const api = fired({ flows: '1. Check out against the mock API', oos: '- Payment: represented by a mock API\n- Other' });
+    assert.deepEqual(api.categories.rabbitHoles.mocked, ['Payment gateway']);
+  });
+
+  test('handoff refusal skips i2p introspection and never suggests the refused dir', () => {
+    const tempBrief = join(TMP_DIR, 'brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+    const slug = JSON.parse(runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json']).stdout).suggestedDir.slice(2);
+    // The suggested dir exists and is not empty: the next suggestion moves on.
+    const taken = join(TMP_DIR, slug);
+    mkdirSync(taken);
+    writeFileSync(join(taken, 'x.txt'), 'x');
+    const res = runB2i(['handoff', taken, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'], {}, null, TMP_DIR);
+    assert.equal(res.code, 1);
+    assert.notEqual(JSON.parse(res.stdout).suggestedDir, `./${slug}`);
+    // Refused before introspection: a hanging i2p list would time out the call otherwise.
+    const quick = runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--dry-run', '--json'], { MOCK_I2P_MODE: 'hang' });
+    assert.equal(quick.code, 1);
+    assert.match(JSON.parse(quick.stdout).error, /is not empty/);
   });
 
   test('handoff refuses a non-empty dir before calling i2p and names a fresh one', () => {

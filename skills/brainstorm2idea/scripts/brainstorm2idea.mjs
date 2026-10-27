@@ -81,16 +81,17 @@ const SAFETY_CONTROL = /\b(?:sandbox(?:ed|es|ing)?|isolat(?:e|ed|es|ing|ion)|con
 const MERGED_PRODUCTS = /\b(?:both\s+(?:jobs|halves|products)|two\s+(?:tools|products|apps)\s+in\s+one|all[- ]in[- ]one\s+(?:tool|app|platform|suite|solution)|one\s+(?:tool|app|cli|product)\s+(?:that|which|to)\s+(?:does|do|handles?)\s+(?:both|everything))\b/i;
 
 // The brief's own words saying the idea is offline, not a software prototype.
-// "a social problem, not software" or "the physical store" alone is not that.
-const PHYSICAL_IDEA = /\bnot\s+(?:a\s+)?software[- ]prototype(?:able)?\b|\bnot\s+a\s+software\s+(?:idea|project|product)\b|\bnon[- ]software\s+(?:idea|project|product)\b|\bphysical\s+(?:venue|space|caf[eé]|location|event)\b/i;
+// "a social problem, not software" or "tickets for a physical event" is not that.
+const PHYSICAL_IDEA = /\bnot\s+(?:a\s+)?software[- ]prototype(?:able)?\b|\bnot\s+a\s+software\s+(?:idea|project|product)\b|\bnon[- ]software\s+(?:idea|project|product)\b/i;
 
 // Active scope as the rabbit-hole and trust matchers should read it: sample data
 // (quoted strings inside code spans such as `parse('svc=payments')`, key=value
 // tokens) and "no"/"zero" mentions ("zero API keys", "no auth") name things the
 // prototype does not do. Code spans themselves stay: `deploy(target)` is scope.
 // Only "no"/"zero" negate: "never merges PRs without CI" and "does not deploy
-// until tests pass" still merge, deploy and run CI.
-const NEGATED = /\b(?:no|zero)\b(?:[ \t]+(?!(?:and|or|but|then|except|only|just|until|unless)\b)[\w'.-]+){1,2}/gi;
+// until tests pass" still merge, deploy and run CI. A negation ends at the clause
+// ("No auth. Stripe checkout" keeps Stripe), and "zero trust" is affirmative.
+const NEGATED = /\b(?:no|zero(?![ \t]+trust\b))\b(?:[ \t]+(?!(?:and|or|but|then|except|only|just|until|unless)\b)[\w'-]+){1,2}/gi;
 export function scrubScope(text) {
   return String(text || '')
     .replace(/`[^`\n]*`/g, (span) => span.replace(/"[^"\n]*"|'[^'\n]*'/g, ' '))
@@ -109,7 +110,8 @@ const SUBSTITUTE_FILLER = /^(?:with|that|this|from|only|local|real|data|calls?|i
 const mocksTheCut = (bullet, activeScope) => {
   const m = SUBSTITUTE.exec(bullet);
   if (!m || !MOCK_MARKER.test(activeScope)) return false;
-  const words = (bullet.slice(m.index + m[0].length).match(/[a-z]{4,}/gi) || [])
+  // Words of 4+ letters, plus short acronyms such as API or UI.
+  const words = (bullet.slice(m.index + m[0].length).match(/\b(?:[a-z]{4,}|[A-Z]{2,3})\b/gi) || [])
     .filter((w) => !MOCK_MARKER.test(w) && !SUBSTITUTE_FILLER.test(w));
   return words.some((w) => new RegExp(`\\b${w}`, 'i').test(activeScope));
 };
@@ -1213,6 +1215,29 @@ export function cmdHandoff(args) {
 
   const briefContent = readFileSync(resolvedBrief, 'utf8');
 
+  // i2p never scaffolds into a non-empty directory; say so before introspection
+  // (which may run npx) or any i2p call, dry runs included, and name a fresh
+  // subdirectory that is not the one just refused.
+  const nonEmptyDir = (p) => {
+    try {
+      return statSync(p).isDirectory() && readdirSync(p).length > 0;
+    } catch {
+      return false; // missing or unreadable: let i2p report it
+    }
+  };
+  const peek = validateBrief(briefContent).meta;
+  const i2pDir = resolve(process.cwd(), dir);
+  if (targetMode === 'i2p' && peek.template !== 'none' && !process.env.B2I_HANDOFF_CMD && nonEmptyDir(i2pDir)) {
+    const base = String(peek.name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'prototype';
+    let slug = base;
+    for (let n = 2; resolve(process.cwd(), slug) === i2pDir || nonEmptyDir(resolve(process.cwd(), slug)); n++) slug = `${base}-${n}`;
+    const err = `"${dir}" is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff ./${slug}`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err, suggestedDir: `./${slug}` }, null, 2));
+    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
+    return 1;
+  }
+
   // Introspection (computed before pre-flight verdict is finalized, but after brief is loaded)
   const pinnedI2pTemplates = VALID_TEMPLATES.filter((t) => t !== 'none');
   let introspection;
@@ -1373,25 +1398,6 @@ export function cmdHandoff(args) {
   // -------------------------------------------------------------------------
   // TARGET: I2P (idea2prototype scaffold + merge)
   // -------------------------------------------------------------------------
-  // i2p never scaffolds into a non-empty directory; say so before calling it,
-  // dry runs included, and name a fresh subdirectory to use instead.
-  const i2pDir = resolve(process.cwd(), dir);
-  const nonEmptyDir = (p) => {
-    try {
-      return statSync(p).isDirectory() && readdirSync(p).length > 0;
-    } catch {
-      return false; // missing or unreadable: let i2p report it
-    }
-  };
-  if (!process.env.B2I_HANDOFF_CMD && nonEmptyDir(i2pDir)) {
-    const slug = String(name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'prototype';
-    const err = `"${dir}" is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff ./${slug}`;
-    if (isJson) console.log(JSON.stringify({ ok: false, error: err, suggestedDir: `./${slug}` }, null, 2));
-    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
-    return 1;
-  }
-
   let cmd = '';
   let cmdArgs = [];
   const i2pName = toI2pArg(name);

@@ -25,7 +25,7 @@ b2i <command>
 - `init <name> [--template web|api|cli|worker|library|none] [--output <path>] [--json]` — scaffold a starter `brief.md` with TODO sections (for humans working outside an agent; refuses to overwrite an existing brief)
 - `dump [file|-] [--output <path>] [--force] [--json]` — de-noise a raw voice transcript or rambling dump into a draft brief skeleton
 - `export [brief|-] [--format prompt|issues|prd|json] [--output <path>] [--json]` — export approved brief to Agent Kickoff Prompt, GitHub Task Checklist, One-page PRD, or JSON
-- `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding; (i2p target) validates the template against the live i2p template set when reachable, falling back to the shipped set offline; prefer a fresh, empty <dir> — handoff refuses to overwrite an existing PROTOTYPE.md:
+- `handoff <dir> [--brief <path>] [--target i2p|raw] [--i2p <version|path>] [--dry-run] [--json]` — pre-flight check + scaffolding; (i2p target) validates the template against the live i2p template set when reachable, falling back to the shipped set offline; use a fresh, empty <dir> such as `./<slug>`, not `.`. The i2p target refuses a non-empty <dir> before calling i2p, and raw refuses to overwrite an existing PROTOTYPE.md:
   - `--target i2p` (default): invokes `i2p new <dir>`, then merges brief into `<dir>/PROTOTYPE.md`
   - `--target raw`: scaffolds standalone `<dir>/PROTOTYPE.md` with zero dependencies (for Python, Go, Rust, or non-i2p stacks)
 - `list [--json]` — print schema version (`b2i-brief@1`) and supported templates
@@ -52,13 +52,14 @@ The journey is free — adapt to the idea:
 ### Explicit Doability Duty
 Before drafting, resolve:
 1. **Who already does this?** Name the 2–3 nearest existing tools (use web search when your host has it; this costs no question) and record them in `## Alternatives` as `- <Name>: <what it does>. Differs by: <how this brief differs>`. If nothing differs, say so and offer a reframe. Don't proceed silently: `b2i score` measures shape, so a well-formed clone still scores 100.
-2. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why.
-3. The smallest demoable slice (`## Core flows`, 1–3 items).
-4. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
-5. **Trust boundaries**, when scope merges, pushes, deploys or releases; holds a token, credential, secret or API key; runs tests, code or scripts; or involves an agent, webhook, CI workflow or payment. Answer four questions: (1) who acts, and with which credential; (2) what untrusted input reaches that actor; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing being judged change that config. Spend at most 1 multiple-choice question on them (inside the 3–5 budget, hard cap 8); record the answers as `TRUST:` lines, or `ASSUMPTION:` lines when unconfirmed. Never park a safety control (sandbox, isolation, least privilege, secrets handling) in `## Out of scope` as if it were a feature: keep it, or write a `TRUST:` line saying how v0 is safe without it.
+2. Which `i2p` template fits (`web | api | cli | worker | library | none`) and why. A physical, offline or event idea (a café, a shop, a meetup) defaults to `template: none`; reframing it into an app is a new idea, so offer it as one multiple-choice option and use it only on the human's yes.
+3. **One product.** If the idea joins two deliverables that would each work alone (could you ship either half without the other?), pick one, park the other in `## Out of scope`, and say so. Don't merge them into "one tool that does both".
+4. The smallest demoable slice (`## Core flows`, 1–3 items). A mock of an out-of-scope item is still in scope: "checks out through a mock ledger" builds a checkout. Either cut the whole thing or count the mock as a flow; don't list only the real version as cut.
+5. The riskiest assumptions (`RISK:` / `ASSUMPTION:` lines).
+6. **Trust boundaries**, when scope merges, pushes, deploys or releases; holds a token, credential, secret or API key; runs tests, code or scripts; or involves an agent, webhook, CI workflow or payment. Answer four questions: (1) who acts, and with which credential; (2) what untrusted input reaches that actor; (3) what crosses a job/process boundary and is trusted on arrival; (4) who configures the tool, and can the thing being judged change that config. Spend at most 1 multiple-choice question on them (inside the 3–5 budget, hard cap 8); record the answers as `TRUST:` lines, or `ASSUMPTION:` lines when unconfirmed. Never park a safety control (sandbox, isolation, least privilege, secrets handling) in `## Out of scope` as if it were a feature: keep it, or write a `TRUST:` line saying how v0 is safe without it.
 
 Flows that cannot be demoed belong in `## Out of scope`. If the idea is not software-prototype doable, say so honestly and offer to reshape or output `template: none` (brief-only mode).
-Non-software idea (physical, offline, event): write `template: none`, finish with check + score + export — handoff will politely decline; do not force a software template.
+Non-software idea (physical, offline, event): write `template: none`, finish with check + score + export — handoff will politely decline; do not force a software template. If your brief says the idea is physical but picks a software template, `check` warns (`physical idea:`).
 
 ### Fallback Rhythm (for vague ideas)
 1. Accept raw input without judgment.
@@ -94,8 +95,8 @@ When the user wants to hand off the brief to an external AI agent, project board
 2. Once approved, write `./brief.md` and immediately execute `b2i check` and `b2i score`.
 3. If check fails, fix the named field, re-run, and output the verdict only.
 4. If score flags unmitigated rabbit holes (e.g. auth, billing, multi-tenancy in core flows), surface a 1-line advisory note suggesting to move them to `## Out of scope`.
-5. Ask if the user wants to hand off:
-   - `b2i handoff <dir>` (scaffolds via `idea2prototype`, full Node/TS/web/cli/worker stack)
+5. Ask if the user wants to hand off, into a fresh subdirectory named after the project (`./<slug>`), never `.`: i2p only scaffolds into a new or empty directory, and handoff refuses a non-empty one and suggests `./<slug>`.
+   - `b2i handoff ./<slug>` (scaffolds via `idea2prototype`, full Node/TS/web/cli/worker stack)
    - `b2i handoff <dir> --target raw` (scaffolds standalone `PROTOTYPE.md` with zero dependencies for Python, Go, Rust, or custom workflows)
 6. Once handoff succeeds, immediately read `<dir>/AGENTS.md` (or `<dir>/CLAUDE.md` / `<dir>/PROTOTYPE.md`) so the user can continue straight into the build loop without repeating context.
 
@@ -135,7 +136,7 @@ distilled: Recipe box that lets cooks save recipes with tags and search them off
 - A rule every flow must obey, e.g. the change being judged never edits its own gate (optional, ≤5 bullets)
 ```
 
-The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score. `## Invariants` is optional and does not count toward the 3-flow cap; `check` warns above 5 bullets, and `score` tips you to add it when a trust trigger fires and the section is absent.
+The 7 hard checks never require `## Alternatives`; `b2i check` warns when it is missing, has fewer than 2 bullets, or a bullet lacks `Differs by:`. When the active scope (name, distilled, Goal, flows) matches a trust trigger (`TRUST_TRIGGERS`: merge/deploy, credentials, runs code, agent, webhook, CI/workflow, payment), `check` warns if `## Risks & assumptions` has no `TRUST:` line, and warns about each `## Out of scope` bullet that cuts a safety control (sandbox, isolation, containers, untrusted code, least privilege, permissions, secrets) unless a `TRUST:` line covers it. Neither moves the score. Both trust triggers and rabbit holes skip sample data (code-like spans such as `parse('svc=payments')`, `key=value` tokens) and negated mentions ("zero API keys", "no auth"). When `## Out of scope` cuts only the real version of a rabbit hole ("represented by a mock ledger") while Goal/flows still build a mock, `score` reports it as `◐ Mocked` (`categories.rabbitHoles.mocked`), not as mitigated. `check` also warns (`two-product smell:`) when the brief justifies a merge ("one tool doing both jobs"). `## Invariants` is optional and does not count toward the 3-flow cap; `check` warns above 5 bullets, and `score` tips you to add it when a trust trigger fires and the section is absent.
 
 ## Token Discipline
 - Edits are diff-sized; never re-print the full brief on minor tweaks.

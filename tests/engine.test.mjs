@@ -1753,3 +1753,135 @@ describe('14. Judgment: review fixes', () => {
     assert.match(out, /- \[ \] Security requirement: the loop merges with a fine-grained token/);
   });
 });
+
+// Cases from the 2026-10-26 A/B re-run (cells 2A, 4A, 5A, 7A, 8A).
+describe('Re-run proposals', () => {
+  const brief = ({ template = 'web', name = 'Swap Desk', distilled = 'Local swap desk for a book cafe', goal, flows, oos, risks = '- RISK: demo scale only', extra = '' }) => `---
+schema: b2i-brief@1
+template: ${template}
+distilled: ${distilled}
+---
+# ${name}
+
+## Goal
+${goal}
+
+## Core flows
+${flows}
+
+## Out of scope
+${oos}
+
+## Risks & assumptions
+${risks}
+${extra}`;
+
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('score ignores sample data in a code span or key=value (4A)', () => {
+    const md = brief({
+      template: 'cli',
+      goal: '- Tail a JSON log file and group errors by service',
+      flows: "1. Parse a line such as `parseLogLine('ts=1 svc=payments msg=\"payment failed\"')` into fields\n2. Print counts for svc=billing and level=error lines",
+      oos: '- Remote log shipping\n- Dashboards',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.categories.rabbitHoles.detected, []);
+    assert.equal(res.score, 100);
+    // A bare technology name in a code span is still scope.
+    const live = brief({ template: 'cli', goal: '- Charge cards through `stripe`', flows: '1. Checkout', oos: '- Refund UI\n- Dashboards' });
+    assert.deepEqual(scoreBrief(live).categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+  });
+
+  test('negated mentions raise no trust trigger or rabbit hole (7A)', () => {
+    const md = brief({
+      goal: '- Run 100% locally with zero API keys\n- Identify members by name, no authentication',
+      flows: '1. Log a donated book\n2. Take a book without any payment',
+      oos: '- Accounts\n- Multi-venue support',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.judgment.trustTriggers, []);
+    assert.deepEqual(res.categories.rabbitHoles.detected, []);
+    // A negation stops at a conjunction, so a live mention after it still counts.
+    const mixed = brief({ goal: '- No dashboards and Stripe checkout for members', flows: '1. Checkout', oos: '- Refunds\n- Accounts' });
+    assert.deepEqual(scoreBrief(mixed).categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+    assert.deepEqual(scoreBrief(mixed).judgment.trustTriggers, ['payment']);
+  });
+
+  test('a real-only cut with a mock in scope is mocked, not mitigated (2A)', () => {
+    const md = brief({
+      goal: '- Owners book a groomer slot',
+      flows: '1. Book the slot and check out through a mock ledger',
+      oos: '- Real money movement: Stripe is represented by a mock ledger\n- Auth and real groomer certification',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.categories.rabbitHoles.mocked, ['Payment gateway']);
+    assert.deepEqual(res.categories.rabbitHoles.mitigated, ['OAuth/SSO']);
+    assert.equal(res.score, 100);
+    assert.ok(res.tips.some((t) => t.startsWith('◐ Mocked Payment gateway')), JSON.stringify(res.tips));
+    assert.ok(!res.tips.some((t) => t.startsWith('✓ Mitigated Payment gateway')));
+    // Without a mock in scope the same cut is a plain mitigation.
+    const cut = brief({ goal: '- Owners book a groomer slot', flows: '1. Book the slot', oos: '- Payments: Stripe is represented by a mock ledger later\n- Auth' });
+    assert.deepEqual(scoreBrief(cut).categories.rabbitHoles.mocked, []);
+    assert.deepEqual(scoreBrief(cut).categories.rabbitHoles.mitigated, ['OAuth/SSO', 'Payment gateway']);
+  });
+
+  test('a merge justification is a two-product smell, wherever the brief makes it (8A)', () => {
+    const md = brief({
+      template: 'cli',
+      name: 'dotstreak',
+      distilled: 'one CLI that saves dotfiles into a git vault, restores them, and renders a streak heatmap page',
+      goal: '- Back up and restore dotfiles\n- Render a public streak heatmap',
+      flows: '1. save\n2. restore\n3. streak',
+      oos: '- Cloud push\n- Private contributions',
+      extra: '\n## Alternatives\n- chezmoi: Blossom-style all-in-one dotfile manager. Differs by: no streak page\n- yadm: git wrapper. Differs by: this brief is one tool doing both jobs\n',
+    });
+    const res = validateBrief(md);
+    assert.equal(res.ok, true);
+    assert.ok(res.warnings.includes('two-product smell: "doing both jobs…" joins two deliverables — brief one product and park the other in ## Out of scope'), JSON.stringify(res.warnings));
+    // "all-in-one" describing a competitor (before "Differs by:") is not this brief's claim.
+    const clean = md.replace('this brief is one tool doing both jobs', 'dotfiles only');
+    assert.ok(!validateBrief(clean).warnings.some((w) => w.startsWith('two-product smell')));
+  });
+
+  test('a brief that calls its idea physical but picks a software template warns (5A)', () => {
+    const md = brief({
+      goal: '- Run bring-one-take-one swaps',
+      flows: '1. Donate a book',
+      oos: '- Coffee point-of-sale\n- Accounts',
+      risks: '- ASSUMPTION: the physical café itself is not software-prototypeable; v0 targets its swap desk',
+    });
+    const res = scoreBrief(md);
+    assert.ok(res.warnings.some((w) => w.startsWith('physical idea: ')), JSON.stringify(res.warnings));
+    assert.ok(res.tips.some((t) => t.startsWith('💡 Physical idea: ')));
+    assert.equal(res.score, 100);
+    assert.ok(!validateBrief(md.replace('template: web', 'template: none')).warnings.some((w) => w.startsWith('physical idea')));
+    // A physical thing cut in Out of scope is not the idea.
+    const shop = brief({ goal: '- Sell prints online', flows: '1. Browse prints', oos: '- Physical store inventory sync\n- Accounts' });
+    assert.ok(!validateBrief(shop).warnings.some((w) => w.startsWith('physical idea')));
+  });
+
+  test('handoff refuses a non-empty dir before calling i2p and names a fresh one', () => {
+    const tempBrief = join(TMP_DIR, 'brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+    for (const extra of [[], ['--dry-run']]) {
+      const res = runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json', ...extra]);
+      assert.equal(res.code, 1);
+      const out = JSON.parse(res.stdout);
+      assert.match(out.error, /is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff \.\/[a-z0-9-]+$/);
+      assert.match(out.suggestedDir, /^\.\/[a-z0-9-]+$/);
+    }
+    assert.ok(existsSync(tempBrief), 'brief left intact');
+    // An empty existing dir passes the guard (the mock i2p itself refuses any existing dir, so dry-run).
+    const empty = join(TMP_DIR, 'empty');
+    mkdirSync(empty);
+    assert.equal(runB2i(['handoff', empty, '--brief', tempBrief, '--i2p', MOCK_I2P, '--dry-run']).code, 0);
+  });
+});

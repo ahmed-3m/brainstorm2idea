@@ -76,20 +76,24 @@ export const TRUST_TRIGGERS = [
 // An Out-of-scope bullet naming one of these is cutting a safety control, not a feature.
 const SAFETY_CONTROL = /\b(?:sandbox(?:ed|es|ing)?|isolat(?:e|ed|es|ing|ion)|containers?|containeri[sz](?:e|ed|ation)|untrusted\s+(?:code|input)|least[- ]privilege|permissions?|secrets?)\b/i;
 
-// Phrases that justify merging two products into one ("does both", "all-in-one").
-const MERGED_PRODUCTS = /\b(?:(?:does|do|doing|handles?|handling|covers?|covering)\s+both(?:\s+(?:jobs|things|halves|tasks))?|both\s+(?:jobs|halves|products|tools|apps)|two\s+(?:tools|products|apps|projects|things)\s+in\s+one|all[- ]in[- ]one|one\s+(?:tool|app|cli|product)\s+(?:that|which|to)\s+(?:does|do|handles?|covers?)\s+(?:both|everything))\b/i;
+// Phrases that justify merging two products into one ("doing both jobs"). Kept
+// narrow: "handles both CSV and JSON" or "an all-in-one HTML file" is one product.
+const MERGED_PRODUCTS = /\b(?:both\s+(?:jobs|halves|products)|two\s+(?:tools|products|apps)\s+in\s+one|all[- ]in[- ]one\s+(?:tool|app|platform|suite|solution)|one\s+(?:tool|app|cli|product)\s+(?:that|which|to)\s+(?:does|do|handles?)\s+(?:both|everything))\b/i;
 
 // The brief's own words saying the idea is offline, not a software prototype.
-const PHYSICAL_IDEA = /\bnot\s+(?:a\s+)?software(?:[- ]prototype(?:able)?)?\b|\bnon[- ]software\b|\bphysical\s+(?:venue|space|shop|store|caf[eé]|business|event|location)\b/i;
+// "a social problem, not software" or "the physical store" alone is not that.
+const PHYSICAL_IDEA = /\bnot\s+(?:a\s+)?software[- ]prototype(?:able)?\b|\bnot\s+a\s+software\s+(?:idea|project|product)\b|\bnon[- ]software\s+(?:idea|project|product)\b|\bphysical\s+(?:venue|space|caf[eé]|location|event)\b/i;
 
 // Active scope as the rabbit-hole and trust matchers should read it: sample data
-// (code-like spans such as `parse('svc=payments')`, key=value tokens) and negated
-// mentions ("zero API keys", "no auth") name things the prototype does not do.
-// A bare `stripe` code span is a technology name and stays.
-const NEGATED = /\b(?:no|zero|without|never|not|nor|non)\b(?:[ \t]+(?!(?:and|or|but|then|except|only|just)\b)[\w'.-]+){1,3}/gi;
+// (quoted strings inside code spans such as `parse('svc=payments')`, key=value
+// tokens) and "no"/"zero" mentions ("zero API keys", "no auth") name things the
+// prototype does not do. Code spans themselves stay: `deploy(target)` is scope.
+// Only "no"/"zero" negate: "never merges PRs without CI" and "does not deploy
+// until tests pass" still merge, deploy and run CI.
+const NEGATED = /\b(?:no|zero)\b(?:[ \t]+(?!(?:and|or|but|then|except|only|just|until|unless)\b)[\w'.-]+){1,2}/gi;
 export function scrubScope(text) {
   return String(text || '')
-    .replace(/`[^`\n]*[()={};"'][^`\n]*`/g, ' ')
+    .replace(/`[^`\n]*`/g, (span) => span.replace(/"[^"\n]*"|'[^'\n]*'/g, ' '))
     .replace(/\b[\w.-]+=(?:"[^"\n]*"|'[^'\n]*'|\S+)/g, ' ')
     .replace(NEGATED, ' ');
 }
@@ -99,6 +103,16 @@ export function scrubScope(text) {
 // must name the substitute; "real" alone is too common to count.
 const MOCK_MARKER = /\b(?:mock(?:s|ed|ing)?|simulat(?:e|es|ed|ion|or)|stub(?:s|bed)?|fake|dummy)\b/i;
 const SUBSTITUTE = /\b(?:mock(?:s|ed|ing)?|simulat(?:e|es|ed|ion|or)|stub(?:s|bed)?|fake|dummy|(?:represented|replaced)\s+by|stand-?ins?)\b/i;
+const SUBSTITUTE_FILLER = /^(?:with|that|this|from|only|local|real|data|calls?|instead)$/i;
+// The substitute the bullet names ("a mock ledger") must be the one Goal/flows
+// build: a mock JSON server does not make "Auth: replaced by a fake header" mocked.
+const mocksTheCut = (bullet, activeScope) => {
+  const m = SUBSTITUTE.exec(bullet);
+  if (!m || !MOCK_MARKER.test(activeScope)) return false;
+  const words = (bullet.slice(m.index + m[0].length).match(/[a-z]{4,}/gi) || [])
+    .filter((w) => !MOCK_MARKER.test(w) && !SUBSTITUTE_FILLER.test(w));
+  return words.some((w) => new RegExp(`\\b${w}`, 'i').test(activeScope));
+};
 
 // ---------------------------------------------------------------------------
 // 7 Hard Checks Validator
@@ -264,7 +278,7 @@ export function validateBrief(content, options = {}) {
   const smellCandidate =
     twoProductCandidates.find(
       (t) => /\b(?:and also|but also|as well as)\b/i.test(t) || /\bboth\b[^.]{0,60}\band\b/i.test(t)
-    ) || (mergeHit && mergeHit.input.slice(mergeHit.index));
+    ) || (mergeHit && mergeHit.input.slice(mergeHit.input.lastIndexOf(' ', mergeHit.index - 2) + 1));
   if (smellCandidate) {
     const snippet = smellCandidate.trim().slice(0, 40);
     warnings.push(`two-product smell: "${snippet}…" joins two deliverables — brief one product and park the other in ## Out of scope`);
@@ -423,7 +437,6 @@ export function scoreBrief(content) {
   const mitigatingLines = outOfScope
     .split(/\r?\n/)
     .filter((l) => l.trim() && !safetyCut.has(extractListItems(l)[0]));
-  const scopeMocks = MOCK_MARKER.test(activeScope);
 
   // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
   // when "PayPal" is listed in Out of scope (both match the payments pattern).
@@ -436,7 +449,7 @@ export function scoreBrief(content) {
     }
     const cuts = mitigatingLines.filter((l) => rh.pattern.test(l));
     if (cuts.length === 0) continue;
-    if (scopeMocks && cuts.every((l) => SUBSTITUTE.test(l))) mockedRabbitHoles.push(rh);
+    if (cuts.every((l) => mocksTheCut(l, activeScope))) mockedRabbitHoles.push(rh);
     else mitigatedRabbitHoles.push(rh);
   }
 
@@ -1363,7 +1376,14 @@ export function cmdHandoff(args) {
   // i2p never scaffolds into a non-empty directory; say so before calling it,
   // dry runs included, and name a fresh subdirectory to use instead.
   const i2pDir = resolve(process.cwd(), dir);
-  if (!process.env.B2I_HANDOFF_CMD && existsSync(i2pDir) && statSync(i2pDir).isDirectory() && readdirSync(i2pDir).length > 0) {
+  const nonEmptyDir = (p) => {
+    try {
+      return statSync(p).isDirectory() && readdirSync(p).length > 0;
+    } catch {
+      return false; // missing or unreadable: let i2p report it
+    }
+  };
+  if (!process.env.B2I_HANDOFF_CMD && nonEmptyDir(i2pDir)) {
     const slug = String(name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'prototype';
     const err = `"${dir}" is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff ./${slug}`;

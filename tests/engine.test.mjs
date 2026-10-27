@@ -1803,7 +1803,7 @@ ${extra}`;
   test('negated mentions raise no trust trigger or rabbit hole (7A)', () => {
     const md = brief({
       goal: '- Run 100% locally with zero API keys\n- Identify members by name, no authentication',
-      flows: '1. Log a donated book\n2. Take a book without any payment',
+      flows: '1. Log a donated book\n2. Take a book with no payment',
       oos: '- Accounts\n- Multi-venue support',
     });
     const res = scoreBrief(md);
@@ -1866,6 +1866,27 @@ ${extra}`;
     // A physical thing cut in Out of scope is not the idea.
     const shop = brief({ goal: '- Sell prints online', flows: '1. Browse prints', oos: '- Physical store inventory sync\n- Accounts' });
     assert.ok(!validateBrief(shop).warnings.some((w) => w.startsWith('physical idea')));
+  });
+
+  test('review probes: double negatives, API code spans and one-product phrasing stay as before', () => {
+    const fired = (b) => scoreBrief(brief({ goal: '- Do one thing', flows: '1. Do it', oos: '- Other\n- More', ...b }));
+    // "never"/"not"/"without" do not negate: these still merge, deploy and run CI.
+    assert.deepEqual(fired({ flows: '1. The bot never merges PRs without CI passing' }).judgment.trustTriggers, ['merge/deploy', 'CI/workflow']);
+    assert.deepEqual(fired({ flows: '1. It does not deploy until the tests pass' }).judgment.trustTriggers, ['merge/deploy']);
+    // A code span is scope; only the quoted sample data inside it is dropped.
+    assert.deepEqual(fired({ template: 'library', flows: '1. `deploy(target)` ships the build' }).judgment.trustTriggers, ['merge/deploy']);
+    // An unrelated mock in scope does not turn a cut into "mocked".
+    const auth = fired({ flows: '1. Serve mock JSON responses', oos: '- Auth: replaced by a fake session header\n- Other' });
+    assert.deepEqual(auth.categories.rabbitHoles.mocked, []);
+    assert.deepEqual(auth.categories.rabbitHoles.mitigated, ['OAuth/SSO']);
+    // One product described with "both" or "all-in-one", and a software brief saying "not software".
+    for (const extra of [
+      '\n## Notes\n- Import handles both CSV and JSON files\n- Covers both macOS and Linux shells\n- Ships as a single all-in-one HTML file\n- Both tools read the same config file\n',
+    ]) {
+      assert.ok(!fired({ extra }).warnings.some((w) => w.startsWith('two-product smell')));
+    }
+    assert.ok(!fired({ risks: '- RISK: adoption is a social problem, not software' }).warnings.some((w) => w.startsWith('physical idea')));
+    assert.ok(!fired({ goal: '- Let customers pre-order online to complement the physical store' }).warnings.some((w) => w.startsWith('physical idea')));
   });
 
   test('handoff refuses a non-empty dir before calling i2p and names a fresh one', () => {

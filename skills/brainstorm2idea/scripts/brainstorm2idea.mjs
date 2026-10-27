@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, realpathSync, statSync, readdirSync } from 'node:fs';
 import { resolve, join, basename, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +75,46 @@ export const TRUST_TRIGGERS = [
 
 // An Out-of-scope bullet naming one of these is cutting a safety control, not a feature.
 const SAFETY_CONTROL = /\b(?:sandbox(?:ed|es|ing)?|isolat(?:e|ed|es|ing|ion)|containers?|containeri[sz](?:e|ed|ation)|untrusted\s+(?:code|input)|least[- ]privilege|permissions?|secrets?)\b/i;
+
+// Phrases that justify merging two products into one ("doing both jobs"). Kept
+// narrow: "handles both CSV and JSON" or "an all-in-one HTML file" is one product.
+const MERGED_PRODUCTS = /\b(?:both\s+(?:jobs|halves|products)|two\s+(?:tools|products|apps)\s+in\s+one|all[- ]in[- ]one\s+(?:tool|app|platform|suite|solution)|one\s+(?:tool|app|cli|product)\s+(?:that|which|to)\s+(?:does|do|handles?)\s+(?:both|everything))\b/i;
+
+// The brief's own words saying the idea is offline, not a software prototype.
+// "a social problem, not software" or "tickets for a physical event" is not that.
+const PHYSICAL_IDEA = /\bnot\s+(?:a\s+)?software[- ]prototype(?:able)?\b|\bnot\s+a\s+software\s+(?:idea|project|product)\b|\bnon[- ]software\s+(?:idea|project|product)\b/i;
+
+// Active scope as the rabbit-hole and trust matchers should read it: sample data
+// (quoted strings inside code spans such as `parse('svc=payments')`, key=value
+// tokens) and "no"/"zero" mentions ("zero API keys", "no auth") name things the
+// prototype does not do. Code spans themselves stay: `deploy(target)` is scope.
+// Only "no"/"zero" negate: "never merges PRs without CI" and "does not deploy
+// until tests pass" still merge, deploy and run CI. A negation ends at the clause
+// ("No auth. Stripe checkout" keeps Stripe), and "zero trust" is affirmative.
+const NEGATED = /\b(?:no|zero(?![ \t]+trust\b))\b(?:[ \t]+(?!(?:and|or|but|then|except|only|just|until|unless)\b)[\w'-]+){1,2}/gi;
+export function scrubScope(text) {
+  return String(text || '')
+    .replace(/`[^`\n]*`/g, (span) => span.replace(/"[^"\n]*"|'[^'\n]*'/g, ' '))
+    .replace(/\b[\w.-]+=(?:"[^"\n]*"|'[^'\n]*'|\S+)/g, ' ')
+    .replace(NEGATED, ' ');
+}
+
+// An Out-of-scope bullet that cuts only the real version of something the active
+// scope still mocks ("Real payments — represented by a mock ledger"). The bullet
+// must name the substitute; "real" alone is too common to count.
+const MOCK_MARKER = /\b(?:mock(?:s|ed|ing)?|simulat(?:e|es|ed|ion|or)|stub(?:s|bed)?|fake|dummy)\b/i;
+const SUBSTITUTE = /\b(?:mock(?:s|ed|ing)?|simulat(?:e|es|ed|ion|or)|stub(?:s|bed)?|fake|dummy|(?:represented|replaced)\s+by|stand-?ins?)\b/i;
+const SUBSTITUTE_FILLER = /^(?:with|that|this|from|only|local|real|data|calls?|instead)$/i;
+// The substitute the bullet names ("a mock ledger") must be the one Goal/flows
+// build: a mock JSON server does not make "Auth: replaced by a fake header" mocked.
+const mocksTheCut = (bullet, activeScope) => {
+  const m = SUBSTITUTE.exec(bullet);
+  if (!m || !MOCK_MARKER.test(activeScope)) return false;
+  // Words of 4+ letters, plus short acronyms such as API or UI.
+  const words = (bullet.slice(m.index + m[0].length).match(/\b(?:[a-z]{4,}|[A-Z]{2,3})\b/gi) || [])
+    .filter((w) => !MOCK_MARKER.test(w) && !SUBSTITUTE_FILLER.test(w));
+  return words.some((w) => new RegExp(`\\b${w}`, 'i').test(activeScope));
+};
 
 // ---------------------------------------------------------------------------
 // 7 Hard Checks Validator
@@ -227,12 +267,32 @@ export function validateBrief(content, options = {}) {
     .filter((l) => /^[-*+]\s+.+/.test(l))
     .map((l) => l.replace(/^[-*+]\s+/, '').trim());
   const twoProductCandidates = [...goalBullets, (meta.distilled || '').trim()].filter(Boolean);
-  const smellCandidate = twoProductCandidates.find(
-    (t) => /\b(?:and also|but also|as well as)\b/i.test(t) || /\bboth\b[^.]{0,60}\band\b/i.test(t)
-  );
+  // A merged idea is often justified rather than joined: "one CLI doing both jobs".
+  // Alternatives count only after "Differs by:", where the brief describes itself.
+  const mergeCandidates = [
+    title,
+    meta.distilled,
+    ...extractListItems(getSection(/^(Core flows|Public API)$/i)?.content),
+    ...extractListItems(getSection(/^Notes$/i)?.content),
+    ...extractListItems(getSection(/^Alternatives$/i)?.content).map((b) => b.split(/\bDiffers by:/i)[1]),
+  ].filter(Boolean);
+  const mergeHit = [...goalBullets, ...mergeCandidates].map((t) => MERGED_PRODUCTS.exec(t)).find(Boolean);
+  const smellCandidate =
+    twoProductCandidates.find(
+      (t) => /\b(?:and also|but also|as well as)\b/i.test(t) || /\bboth\b[^.]{0,60}\band\b/i.test(t)
+    ) || (mergeHit && mergeHit.input.slice(mergeHit.input.lastIndexOf(' ', mergeHit.index - 2) + 1));
   if (smellCandidate) {
-    const snippet = smellCandidate.slice(0, 40);
+    const snippet = smellCandidate.trim().slice(0, 40);
     warnings.push(`two-product smell: "${snippet}…" joins two deliverables — brief one product and park the other in ## Out of scope`);
+  }
+
+  // A brief that itself says the idea is physical but still picks a software template.
+  if ((meta.template || '').toLowerCase() !== 'none') {
+    // Out of scope and Alternatives are left out: "Physical store sync" there is a cut, not the idea.
+    const ownWords = [meta.distilled, ...[/^Goal$/i, /^Risks/i, /^Notes$/i].map((re) => getSection(re)?.content)];
+    if (ownWords.some((t) => PHYSICAL_IDEA.test(t || ''))) {
+      warnings.push('physical idea: the brief says the idea itself is not software; template: none (brief-only) is the default, and a software reframe needs the human\'s yes');
+    }
   }
 
   // Judgment checks: warnings beside the 7 hard checks, never failures.
@@ -289,9 +349,11 @@ function judgeBrief({ getSection, title, distilled }, warnings) {
 
   // Trust boundaries: scope that merges, deploys, holds credentials or runs code
   // needs TRUST: lines saying who acts on what, and why that is safe.
-  const activeScope = [title, distilled, getSection(/^Goal$/i)?.content, getSection(/^(Core flows|Public API)$/i)?.content]
-    .filter(Boolean)
-    .join('\n');
+  const activeScope = scrubScope(
+    [title, distilled, getSection(/^Goal$/i)?.content, getSection(/^(Core flows|Public API)$/i)?.content]
+      .filter(Boolean)
+      .join('\n')
+  );
   const trustTriggers = [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(activeScope)).map((t) => t.label))];
   // Same heading match as score and export, so a plain "## Risks" counts too.
   const trustLines = filledItems(getSection(/^Risks/i)?.content).filter((b) => /^TRUST:/i.test(b));
@@ -328,7 +390,7 @@ const safetyControlsIn = (line) =>
 export function scoreBrief(content) {
   const emptyCategories = {
     scope: { score: 0, max: 30, outOfScopeBullets: 0 },
-    rabbitHoles: { score: 0, max: 40, detected: [], mitigated: [] },
+    rabbitHoles: { score: 0, max: 40, detected: [], mitigated: [], mocked: [] },
     alignment: { score: 0, max: 30, risksTagged: false, notesLean: false, templateMismatch: null },
   };
 
@@ -367,25 +429,30 @@ export function scoreBrief(content) {
   else if (oosBullets === 1) scopeScore = 15;
 
   // 2. Rabbit-Hole Immunity (40 pts max)
-  const activeScope = `${meta.name} ${goal} ${flows}`;
+  const activeScope = scrubScope(`${meta.name} ${goal} ${flows}`);
   const detectedRabbitHoles = [];
   const mitigatedRabbitHoles = [];
+  const mockedRabbitHoles = [];
   // With a trust boundary in scope, a scoped-out safety control is a gap, not a
   // mitigation: those bullets never credit a rabbit hole as quarantined.
   const safetyCut = new Set(valid.judgment.trustTriggers.length > 0 ? safetyBulletsOf(outOfScope) : []);
-  const mitigatingScope = outOfScope
+  const mitigatingLines = outOfScope
     .split(/\r?\n/)
-    .filter((l) => !safetyCut.has(extractListItems(l)[0]))
-    .join('\n');
+    .filter((l) => l.trim() && !safetyCut.has(extractListItems(l)[0]));
 
   // Active scope wins: "Stripe checkout" in Core flows is a live rabbit hole even
   // when "PayPal" is listed in Out of scope (both match the payments pattern).
+  // A cut of only the real thing while Goal/flows keep a mock is not a cut: the
+  // mock is still built, so it is reported as mocked (no deduction, no credit).
   for (const rh of RABBIT_HOLES) {
     if (rh.pattern.test(activeScope)) {
       detectedRabbitHoles.push(rh);
-    } else if (rh.pattern.test(mitigatingScope)) {
-      mitigatedRabbitHoles.push(rh);
+      continue;
     }
+    const cuts = mitigatingLines.filter((l) => rh.pattern.test(l));
+    if (cuts.length === 0) continue;
+    if (cuts.every((l) => mocksTheCut(l, activeScope))) mockedRabbitHoles.push(rh);
+    else mitigatedRabbitHoles.push(rh);
   }
 
   const penalty = detectedRabbitHoles.length * 15;
@@ -438,6 +505,9 @@ export function scoreBrief(content) {
   for (const mrh of mitigatedRabbitHoles) {
     tips.push(`✓ Mitigated ${mrh.label}: explicitly marked in Out of scope`);
   }
+  for (const krh of mockedRabbitHoles) {
+    tips.push(`◐ Mocked ${krh.label}: Out of scope cuts only the real one, Goal/flows still build a mock; it costs a flow, keep it only if it is the demo (score unchanged)`);
+  }
   if (oosBullets < 2) {
     tips.push('💡 Add ≥2 non-goals to ## Out of scope to strengthen the prototype boundary.');
   }
@@ -447,6 +517,10 @@ export function scoreBrief(content) {
   const twoProductWarn = valid.warnings.find((w) => w.startsWith('two-product smell: '));
   if (twoProductWarn) {
     tips.push(`💡 Two-product smell: ${twoProductWarn.slice('two-product smell: '.length)}`);
+  }
+  const physicalWarn = valid.warnings.find((w) => w.startsWith('physical idea: '));
+  if (physicalWarn) {
+    tips.push(`💡 Physical idea: ${physicalWarn.slice('physical idea: '.length)}`);
   }
   for (const cut of valid.judgment.scopedOutSafety) {
     tips.push(`⚠️ Out-of-scope safety: "${snip(cut)}" is a safety control; keep it or add a TRUST: line (score unchanged)`);
@@ -479,6 +553,7 @@ export function scoreBrief(content) {
         max: 40,
         detected: detectedRabbitHoles.map((rh) => ({ label: rh.label, fix: rh.fix })),
         mitigated: mitigatedRabbitHoles.map((rh) => rh.label),
+        mocked: mockedRabbitHoles.map((rh) => rh.label),
       },
       alignment: {
         score: alignmentScore,
@@ -1139,6 +1214,29 @@ export function cmdHandoff(args) {
   }
 
   const briefContent = readFileSync(resolvedBrief, 'utf8');
+
+  // i2p never scaffolds into a non-empty directory; say so before introspection
+  // (which may run npx) or any i2p call, dry runs included, and name a fresh
+  // subdirectory that is not the one just refused.
+  const nonEmptyDir = (p) => {
+    try {
+      return statSync(p).isDirectory() && readdirSync(p).length > 0;
+    } catch {
+      return false; // missing or unreadable: let i2p report it
+    }
+  };
+  const peek = validateBrief(briefContent).meta;
+  const i2pDir = resolve(process.cwd(), dir);
+  if (targetMode === 'i2p' && peek.template !== 'none' && !process.env.B2I_HANDOFF_CMD && nonEmptyDir(i2pDir)) {
+    const base = String(peek.name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'prototype';
+    let slug = base;
+    for (let n = 2; resolve(process.cwd(), slug) === i2pDir || nonEmptyDir(resolve(process.cwd(), slug)); n++) slug = `${base}-${n}`;
+    const err = `"${dir}" is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff ./${slug}`;
+    if (isJson) console.log(JSON.stringify({ ok: false, error: err, suggestedDir: `./${slug}` }, null, 2));
+    else console.error(`Brainstorm2idea handoff — FAIL\n  ${err}`);
+    return 1;
+  }
 
   // Introspection (computed before pre-flight verdict is finalized, but after brief is loaded)
   const pinnedI2pTemplates = VALID_TEMPLATES.filter((t) => t !== 'none');

@@ -29,9 +29,10 @@ const TMP_DIR = resolve('tests/tmp-test-sandbox');
 // environment would otherwise leak into every spawned b2i.
 delete process.env.FORCE_COLOR;
 
-function runB2i(args, env = {}, input = null) {
+function runB2i(args, env = {}, input = null, cwd = undefined) {
   const opts = {
     encoding: 'utf8',
+    cwd,
     env: { ...process.env, ...env },
   };
   if (input !== null) opts.input = input;
@@ -1751,5 +1752,186 @@ describe('14. Judgment: review fixes', () => {
     const out = exportBrief(withInvariants(DEVLOOP_FIXED), { format: 'issues' });
     assert.match(out, /- \[ \] Invariant holds in every flow: The judged PR never configures its own gate/);
     assert.match(out, /- \[ \] Security requirement: the loop merges with a fine-grained token/);
+  });
+});
+
+// Cases from the 2026-10-26 A/B re-run (cells 2A, 4A, 5A, 7A, 8A).
+describe('Re-run proposals', () => {
+  const brief = ({ template = 'web', name = 'Swap Desk', distilled = 'Local swap desk for a book cafe', goal, flows, oos, risks = '- RISK: demo scale only', extra = '' }) => `---
+schema: b2i-brief@1
+template: ${template}
+distilled: ${distilled}
+---
+# ${name}
+
+## Goal
+${goal}
+
+## Core flows
+${flows}
+
+## Out of scope
+${oos}
+
+## Risks & assumptions
+${risks}
+${extra}`;
+
+  beforeEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+    mkdirSync(TMP_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TMP_DIR)) rmSync(TMP_DIR, { recursive: true, force: true });
+  });
+
+  test('score ignores sample data in a code span or key=value (4A)', () => {
+    const md = brief({
+      template: 'cli',
+      goal: '- Tail a JSON log file and group errors by service',
+      flows: "1. Parse a line such as `parseLogLine('ts=1 svc=payments msg=\"payment failed\"')` into fields\n2. Print counts for svc=billing and level=error lines",
+      oos: '- Remote log shipping\n- Dashboards',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.categories.rabbitHoles.detected, []);
+    assert.equal(res.score, 100);
+    // A bare technology name in a code span is still scope.
+    const live = brief({ template: 'cli', goal: '- Charge cards through `stripe`', flows: '1. Checkout', oos: '- Refund UI\n- Dashboards' });
+    assert.deepEqual(scoreBrief(live).categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+  });
+
+  test('negated mentions raise no trust trigger or rabbit hole (7A)', () => {
+    const md = brief({
+      goal: '- Run 100% locally with zero API keys\n- Identify members by name, no authentication',
+      flows: '1. Log a donated book\n2. Take a book with no payment',
+      oos: '- Accounts\n- Multi-venue support',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.judgment.trustTriggers, []);
+    assert.deepEqual(res.categories.rabbitHoles.detected, []);
+    // A negation stops at a conjunction, so a live mention after it still counts.
+    const mixed = brief({ goal: '- No dashboards and Stripe checkout for members', flows: '1. Checkout', oos: '- Refunds\n- Accounts' });
+    assert.deepEqual(scoreBrief(mixed).categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+    assert.deepEqual(scoreBrief(mixed).judgment.trustTriggers, ['payment']);
+  });
+
+  test('a real-only cut with a mock in scope is mocked, not mitigated (2A)', () => {
+    const md = brief({
+      goal: '- Owners book a groomer slot',
+      flows: '1. Book the slot and check out through a mock ledger',
+      oos: '- Real money movement: Stripe is represented by a mock ledger\n- Auth and real groomer certification',
+    });
+    const res = scoreBrief(md);
+    assert.deepEqual(res.categories.rabbitHoles.mocked, ['Payment gateway']);
+    assert.deepEqual(res.categories.rabbitHoles.mitigated, ['OAuth/SSO']);
+    assert.equal(res.score, 100);
+    assert.ok(res.tips.some((t) => t.startsWith('◐ Mocked Payment gateway')), JSON.stringify(res.tips));
+    assert.ok(!res.tips.some((t) => t.startsWith('✓ Mitigated Payment gateway')));
+    // Without a mock in scope the same cut is a plain mitigation.
+    const cut = brief({ goal: '- Owners book a groomer slot', flows: '1. Book the slot', oos: '- Payments: Stripe is represented by a mock ledger later\n- Auth' });
+    assert.deepEqual(scoreBrief(cut).categories.rabbitHoles.mocked, []);
+    assert.deepEqual(scoreBrief(cut).categories.rabbitHoles.mitigated, ['OAuth/SSO', 'Payment gateway']);
+  });
+
+  test('a merge justification is a two-product smell, wherever the brief makes it (8A)', () => {
+    const md = brief({
+      template: 'cli',
+      name: 'dotstreak',
+      distilled: 'one CLI that saves dotfiles into a git vault, restores them, and renders a streak heatmap page',
+      goal: '- Back up and restore dotfiles\n- Render a public streak heatmap',
+      flows: '1. save\n2. restore\n3. streak',
+      oos: '- Cloud push\n- Private contributions',
+      extra: '\n## Alternatives\n- chezmoi: Blossom-style all-in-one dotfile manager. Differs by: no streak page\n- yadm: git wrapper. Differs by: this brief is one tool doing both jobs\n',
+    });
+    const res = validateBrief(md);
+    assert.equal(res.ok, true);
+    assert.ok(res.warnings.includes('two-product smell: "doing both jobs…" joins two deliverables — brief one product and park the other in ## Out of scope'), JSON.stringify(res.warnings));
+    // "all-in-one" describing a competitor (before "Differs by:") is not this brief's claim.
+    const clean = md.replace('this brief is one tool doing both jobs', 'dotfiles only');
+    assert.ok(!validateBrief(clean).warnings.some((w) => w.startsWith('two-product smell')));
+  });
+
+  test('a brief that calls its idea physical but picks a software template warns (5A)', () => {
+    const md = brief({
+      goal: '- Run bring-one-take-one swaps',
+      flows: '1. Donate a book',
+      oos: '- Coffee point-of-sale\n- Accounts',
+      risks: '- ASSUMPTION: the physical café itself is not software-prototypeable; v0 targets its swap desk',
+    });
+    const res = scoreBrief(md);
+    assert.ok(res.warnings.some((w) => w.startsWith('physical idea: ')), JSON.stringify(res.warnings));
+    assert.ok(res.tips.some((t) => t.startsWith('💡 Physical idea: ')));
+    assert.equal(res.score, 100);
+    assert.ok(!validateBrief(md.replace('template: web', 'template: none')).warnings.some((w) => w.startsWith('physical idea')));
+    // A physical thing cut in Out of scope is not the idea.
+    const shop = brief({ goal: '- Sell prints online', flows: '1. Browse prints', oos: '- Physical store inventory sync\n- Accounts' });
+    assert.ok(!validateBrief(shop).warnings.some((w) => w.startsWith('physical idea')));
+  });
+
+  test('review probes: double negatives, API code spans and one-product phrasing stay as before', () => {
+    const fired = (b) => scoreBrief(brief({ goal: '- Do one thing', flows: '1. Do it', oos: '- Other\n- More', ...b }));
+    // "never"/"not"/"without" do not negate: these still merge, deploy and run CI.
+    assert.deepEqual(fired({ flows: '1. The bot never merges PRs without CI passing' }).judgment.trustTriggers, ['merge/deploy', 'CI/workflow']);
+    assert.deepEqual(fired({ flows: '1. It does not deploy until the tests pass' }).judgment.trustTriggers, ['merge/deploy']);
+    // A code span is scope; only the quoted sample data inside it is dropped.
+    assert.deepEqual(fired({ template: 'library', flows: '1. `deploy(target)` ships the build' }).judgment.trustTriggers, ['merge/deploy']);
+    // An unrelated mock in scope does not turn a cut into "mocked".
+    const auth = fired({ flows: '1. Serve mock JSON responses', oos: '- Auth: replaced by a fake session header\n- Other' });
+    assert.deepEqual(auth.categories.rabbitHoles.mocked, []);
+    assert.deepEqual(auth.categories.rabbitHoles.mitigated, ['OAuth/SSO']);
+    // One product described with "both" or "all-in-one", and a software brief saying "not software".
+    for (const extra of [
+      '\n## Notes\n- Import handles both CSV and JSON files\n- Covers both macOS and Linux shells\n- Ships as a single all-in-one HTML file\n- Both tools read the same config file\n',
+    ]) {
+      assert.ok(!fired({ extra }).warnings.some((w) => w.startsWith('two-product smell')));
+    }
+    assert.ok(!fired({ risks: '- RISK: adoption is a social problem, not software' }).warnings.some((w) => w.startsWith('physical idea')));
+    assert.ok(!fired({ goal: '- Let customers pre-order online to complement the physical store' }).warnings.some((w) => w.startsWith('physical idea')));
+  });
+
+  test('PR review: clause-bounded negation, zero trust, physical events, short substitute names', () => {
+    const fired = (b) => scoreBrief(brief({ goal: '- Do one thing', flows: '1. Do it', oos: '- Other\n- More', ...b }));
+    const noAuth = fired({ goal: '- No auth. Stripe checkout for members' });
+    assert.deepEqual(noAuth.categories.rabbitHoles.detected.map((d) => d.label), ['Payment gateway']);
+    assert.deepEqual(noAuth.judgment.trustTriggers, ['payment']);
+    assert.deepEqual(fired({ goal: '- Implement zero trust API keys' }).judgment.trustTriggers, ['credentials']);
+    assert.ok(!fired({ goal: '- Sell online tickets for a physical event' }).warnings.some((w) => w.startsWith('physical idea')));
+    const api = fired({ flows: '1. Check out against the mock API', oos: '- Payment: represented by a mock API\n- Other' });
+    assert.deepEqual(api.categories.rabbitHoles.mocked, ['Payment gateway']);
+  });
+
+  test('handoff refusal skips i2p introspection and never suggests the refused dir', () => {
+    const tempBrief = join(TMP_DIR, 'brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+    const slug = JSON.parse(runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json']).stdout).suggestedDir.slice(2);
+    // The suggested dir exists and is not empty: the next suggestion moves on.
+    const taken = join(TMP_DIR, slug);
+    mkdirSync(taken);
+    writeFileSync(join(taken, 'x.txt'), 'x');
+    const res = runB2i(['handoff', taken, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json'], {}, null, TMP_DIR);
+    assert.equal(res.code, 1);
+    assert.notEqual(JSON.parse(res.stdout).suggestedDir, `./${slug}`);
+    // Refused before introspection: a hanging i2p list would time out the call otherwise.
+    const quick = runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--dry-run', '--json'], { MOCK_I2P_MODE: 'hang' });
+    assert.equal(quick.code, 1);
+    assert.match(JSON.parse(quick.stdout).error, /is not empty/);
+  });
+
+  test('handoff refuses a non-empty dir before calling i2p and names a fresh one', () => {
+    const tempBrief = join(TMP_DIR, 'brief.md');
+    copyFileSync(join(FIXTURES_DIR, 'valid-brief.md'), tempBrief);
+    for (const extra of [[], ['--dry-run']]) {
+      const res = runB2i(['handoff', TMP_DIR, '--brief', tempBrief, '--i2p', MOCK_I2P, '--json', ...extra]);
+      assert.equal(res.code, 1);
+      const out = JSON.parse(res.stdout);
+      assert.match(out.error, /is not empty and idea2prototype only scaffolds into a new or empty directory — run: b2i handoff \.\/[a-z0-9-]+$/);
+      assert.match(out.suggestedDir, /^\.\/[a-z0-9-]+$/);
+    }
+    assert.ok(existsSync(tempBrief), 'brief left intact');
+    // An empty existing dir passes the guard (the mock i2p itself refuses any existing dir, so dry-run).
+    const empty = join(TMP_DIR, 'empty');
+    mkdirSync(empty);
+    assert.equal(runB2i(['handoff', empty, '--brief', tempBrief, '--i2p', MOCK_I2P, '--dry-run']).code, 0);
   });
 });

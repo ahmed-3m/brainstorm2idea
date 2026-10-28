@@ -16,10 +16,10 @@
 - **Doability scores can go up.** Rabbit-hole matching now skips "no"/"zero" mentions and sample data (see the re-run proposals above), so a brief that says what it does *not* build no longer loses 15 points for it. A Goal of "Save notes locally with no auth needed" scored 75 (Grade C) in v0.5.1 and scores 90 (Grade A) now. The judgment checks, `◐ Mocked` and scoped-out safety controls still never move the score.
 - Trust triggers catch common agent-loop wording they used to miss:
   - up to 3 words between the verb and what runs ("runs the repo's tests", "runs only the new tests", "run the full test suite"), but never "of" or a clause break ("a running count of failed tests" stays quiet), plus patches ("executes the generated patch");
-  - "opens a PR and merges it", "lands the PR", "ships the change to production", "commits them to main", and a push to any named branch ("pushes the fix to the agent's branch");
-  - user-supplied model keys ("the user key", "bring your own key", "OpenAI key") and a case-sensitive `PAT`.
+  - "opens a PR and merges it" (not "into" anything but a branch), "lands the PR", "ships the change to production", "commits them to main", and a push to any named branch ("pushes the fix to the agent's branch");
+  - user-supplied model keys ("bring your own key", "their own key", "OpenAI key") and a case-sensitive `PAT` (not "PAT testing").
 
-  A phrase-table test pins each of these, along with look-alikes that must stay quiet ("merges it with defaults", "ships orders to customers", "commit messages", "push notifications").
+  A phrase-table test pins each of these, along with look-alikes that must stay quiet ("merges it with defaults", "merge them into a digest", "user key press", "the model keys off", "ships orders to customers", "commit messages", "push notifications").
 
 ## [v0.5.1] — 2026-10-23
 

@@ -1950,7 +1950,9 @@ describe('15. Judgment: trust-trigger phrase table', () => {
     ['ships the change to production', ['merge/deploy']],
     ['an LLM rewrites files and commits them to main', ['merge/deploy']],
     ["pushes the fix to the agent's branch", ['merge/deploy']],
-    ['calls the OpenAI API with the user key', ['credentials']],
+    ["calls the model with the user's OpenAI key", ['credentials']],
+    ['Lists open PRs and lets you merge them with one click', ['merge/deploy']],
+    ['opens a PR and merges it into main', ['merge/deploy']],
     ["uses the bot's PAT to comment", ['credentials']],
     ['bring your own key for the model provider', ['credentials']],
   ];
@@ -1966,6 +1968,12 @@ describe('15. Judgment: trust-trigger phrase table', () => {
     'lands on the pricing page',
     'a piano trainer that shows which keys to press',
     'shows a running count of failed tests',
+    'Summarize PR comments and merge them into a digest',
+    'remaps each user key press to a macro',
+    'shows user keys and hotkeys in a cheat sheet',
+    'the model keys off the timestamp',
+    'group results by provider keys',
+    'PAT testing schedule for office appliances',
   ];
 
   for (const [phrase, labels] of FIRES) {

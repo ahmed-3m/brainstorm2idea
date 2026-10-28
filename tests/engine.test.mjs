@@ -1935,3 +1935,56 @@ ${extra}`;
     assert.equal(runB2i(['handoff', empty, '--brief', tempBrief, '--i2p', MOCK_I2P, '--dry-run']).code, 0);
   });
 });
+
+describe('15. Judgment: trust-trigger phrase table', () => {
+  const firing = (text) => [...new Set(TRUST_TRIGGERS.filter((t) => t.pattern.test(text)).map((t) => t.label))];
+
+  // Agent-loop wording seen in real briefs; each phrase must fire exactly these labels.
+  const FIRES = [
+    ["runs the repo's tests on every PR", ['runs code']],
+    ['runs only the new tests on base and head', ['runs code']],
+    ['run the full test suite on base and head', ['runs code']],
+    ['executes the generated patch', ['runs code']],
+    ['opens a PR and merges it when CI is green', ['merge/deploy', 'CI/workflow']],
+    ['lands the PR automatically when checks pass', ['merge/deploy']],
+    ['ships the change to production', ['merge/deploy']],
+    ['an LLM rewrites files and commits them to main', ['merge/deploy']],
+    ["pushes the fix to the agent's branch", ['merge/deploy']],
+    ["calls the model with the user's OpenAI key", ['credentials']],
+    ['Lists open PRs and lets you merge them with one click', ['merge/deploy']],
+    ['opens a PR and merges it into main', ['merge/deploy']],
+    ["uses the bot's PAT to comment", ['credentials']],
+    ['bring your own key for the model provider', ['credentials']],
+  ];
+
+  // Look-alikes that cross no trust boundary.
+  const QUIET = [
+    'parses the config and merges it with defaults',
+    'merge two CSV files into one',
+    'ships orders to customers',
+    'commit messages follow Conventional Commits',
+    'run a quick code review',
+    'send push notifications to the phone',
+    'lands on the pricing page',
+    'a piano trainer that shows which keys to press',
+    'shows a running count of failed tests',
+    'Summarize PR comments and merge them into a digest',
+    'remaps each user key press to a macro',
+    'shows user keys and hotkeys in a cheat sheet',
+    'the model keys off the timestamp',
+    'group results by provider keys',
+    'PAT testing schedule for office appliances',
+  ];
+
+  for (const [phrase, labels] of FIRES) {
+    test(`fires ${labels.join(' + ')}: "${phrase}"`, () => {
+      assert.deepEqual(firing(phrase), labels);
+    });
+  }
+
+  for (const phrase of QUIET) {
+    test(`stays quiet: "${phrase}"`, () => {
+      assert.deepEqual(firing(phrase), []);
+    });
+  }
+});

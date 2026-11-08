@@ -190,3 +190,7 @@ Every scenario also satisfies the rubric's scope-discipline limits: 2 goals, 3 f
 ## License
 
 MIT © The Brainstorm2Idea Authors
+
+---
+
+**By Ahmed Mohammed** — AI/ML engineer, Linz · [Portfolio](https://ahmed-3m.github.io) · [LinkedIn](https://www.linkedin.com/in/ahmed-3m/)
